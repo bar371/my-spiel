@@ -97,12 +97,18 @@ const TAG_RULES = [
   ["Family",            { bgg: /family games|children's game/,                                        text: /\bfamil(?:y|ies)\b|\bkids?\b|children/ }],
   ["Economic",          { bgg: /economic|stock holding|investment|loans/,                             text: /econom|stock market|\binvest/ }],
   ["Adventure & campaign", { bgg: /adventure|dungeon|campaign|legacy|scenario|storytelling|role playing|narrative/, text: /adventur|dungeon|campaign|legacy|\bquests?\b/ }],
+  ["Racing",            { bgg: /^racing$|^race$/,                                                     text: /\bracing\b|race cars?|\bkarts?\b/ }],
+  ["Dexterity",         { bgg: /dexterity|flicking|stacking and balancing/,                           text: /\bflick|dexterity|\bstacking\b/ }],
   ["Card game",         { bgg: /^card game$/,                                                         text: /card game/ }]
 ];
 
-// Hand-picked tags for the preview-article games, from what the articles say about them
+// Hand-picked tags, by game id, for games the rules above miss
 const MANUAL_TAGS = {
-  "wingspan-pocket": ["Engine building"]
+  "8-dragons": ["Set collection"],
+  "antgravity": ["PvP / conflict"],
+  "tornado-splash": ["Card game"],
+  "wingspan-pocket": ["Engine building"],
+  "medico": ["Bluffing & deduction"]   // everyone secretly picks a location each round
 };
 
 const tagsFrom = ({ bggNames = [], text = "", minP, maxP, minT, maxT, expansion }) => {
@@ -246,7 +252,8 @@ function merge(seed, bggGames) {
     let id = slug(b.name) || b.id;
     if (ids.has(id)) id = b.id;
     ids.add(id);
-    added.push({ ...b, id });
+    const manual = MANUAL_TAGS[id] || MANUAL_TAGS[b.id];
+    added.push({ ...b, id, ...(manual ? { tags: sortTags([...(b.tags || []), ...manual]) } : {}) });
   }
   // Tags for the hand-written games are rebuilt each run: BGG's (when listed there),
   // keywords from the description, and MANUAL_TAGS
