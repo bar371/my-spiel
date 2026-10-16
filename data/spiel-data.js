@@ -21,7 +21,7 @@ window.SPIEL_SEED = {
   },
 
   members: [
-    { id: "sjord",    name: "Sjord",    color: "#d64545" },
+    { id: "sjord",    name: "Sjoerd",   color: "#d64545" },
     { id: "annemieke", name: "Annemieke", color: "#3a7bd5" },
     { id: "bar",      name: "Bar",      color: "#e8b22d" },
     { id: "naomi",    name: "Naomi",    color: "#3f9c5a" }
