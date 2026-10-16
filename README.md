@@ -5,6 +5,7 @@ A small planner for our crew (Sjoerd, Annemieke, Bar and Naomi) at **SPIEL Essen
 
 - **My day**: a time grid of your day: demo sessions you've joined (fixed times 🔒) and booth visits you've planned. Drag a visit by its ⠿ grip to move it, or by its bottom edge to change its length (15-minute steps, mouse or touch). Clashes are outlined in red, and **Fix clashes** moves overlapping visits to the next free time.
 - **Games**: every game we're tracking with publisher, hall/booth, players, play time, price, description, a link, and its session times. Tap a game to join a demo session, **plan a booth visit** (any game, no demo needed: pick a day, start and length; it suggests your next free slot), add it to your buy list, or write notes.
+- **Favorites**: tap ☆ on any game to mark one you like, even if you won't plan it. **★ Favorites** filters the list, and the Crew tab shows the crew's favorites, most-liked first.
 - **Crew**: *Who's going where*: day by day, every demo session and booth visit anyone has planned, with everyone's meeples and a 🤝 badge when you're going together. Updates live once crew sync is on.
 - **Budget**: set your budget, mark games must-have or maybe, tick them off when bought, and see what's left.
 - **More**: switch player, share your plan, back up or restore, and install instructions.
@@ -86,8 +87,9 @@ Add an entry to `games` in `data/spiel-data.js`:
 }
 ```
 
-The shared list holds the full BoardGameGeek SPIEL 2026 preview (boardgamegeek.com/geekpreviewv2/93, about 1,250 games
-with booth, price and player count where the publisher gave them; `bgg` is the BoardGameGeek id) plus 32 games compiled
+The shared list holds the BoardGameGeek SPIEL 2026 preview (boardgamegeek.com/geekpreviewv2/93; about 770 games
+with a hall or booth, with price and player count where the publisher gave them; listings without any hall or booth
+are left out as they're probably not at the fair; `bgg` is the BoardGameGeek id) plus 32 games compiled
 from preview articles (marked `preview: true`, each linking to its source).
 Demo times are unpublished, so add them with **Edit game** in the app (shared with the crew when sync is on) or in this file.
 
@@ -98,7 +100,7 @@ Every game has `tags` for the type filter in the Games tab (Engine building, Dec
 PvP / conflict, Co-op, Trick-taking, Party, Solo, Quick, …; the chip order is `SPIEL_SEED.tags`). The importer
 derives them from BGG's mechanics, categories and subdomains, falls back to keywords in the description for
 games BGG hasn't classified, and adds hand-picked ones from `MANUAL_TAGS` in `tools/import-bgg-preview.js`.
-Selecting several tags shows games that have all of them. Tags can also be changed per game with **Edit game**.
+Selecting several tags shows games that have all of them. Two extra chips come first: **📰 Preview** (the preview-article games) and **🎲 Demo slot** (games with at least one demo session, including ones added in the app). Tags can also be changed per game with **Edit game**.
 The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing

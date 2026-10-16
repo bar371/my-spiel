@@ -77,6 +77,23 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(await p.locator('.game-card').count() === 1 && (await text('.game-card')).includes('Ark Nova'), 'search matches tags');
   await p.fill('#search', '');
 
+  console.log('Favorites');
+  await p.click('.game-card[data-game="sky-team"] .fav-btn');
+  ok(!(await p.isVisible('#sheet')), 'star on a card does not open the game');
+  ok((await db()).plans.sjord.favs.includes('sky-team'), 'favorite saved');
+  ok((await text('.game-card[data-game="sky-team"] .fav-btn')) === '★', 'card shows a filled star');
+  await p.click('[data-filter="favs"]');
+  ok(await p.locator('.game-card').count() === 1, 'Favorites filter');
+  await p.click('[data-filter="all"]');
+  await p.click('[data-game="heat"]'); await p.click('#sheet-body .fav-btn');
+  ok((await db()).plans.sjord.favs.length === 2 && (await text('#sheet-body .fav-btn')).includes('Favorite'), 'favorite from the game sheet');
+  await p.click('#sheet-body .fav-btn');
+  ok((await db()).plans.sjord.favs.length === 1, 'unfavorite');
+  await close();
+  await tab('crew');
+  ok((await text('.view')).includes('Crew favorites') && (await text('.view')).includes('Sky Team'), 'crew favorites listed');
+  await tab('games');
+
   console.log('Join / leave / clash');
   await p.click('[data-game="cascadia"]');
   await p.click('[data-session="cascadia-1"]');

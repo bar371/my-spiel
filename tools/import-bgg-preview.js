@@ -42,14 +42,16 @@ async function fetchItems() {
   const items = [];
   for (let page = 1; page < 200; page++) {
     const url = `${API}?nosession=1&pageid=${page}&previewid=${PREVIEW_ID}`;
-    let res;
+    // BGG sometimes answers with an error page instead of JSON (rate limiting): wait and retry
+    let body;
     for (let attempt = 0; ; attempt++) {
-      res = await fetch(url, { headers: { "User-Agent": "my-spiel planner importer (github.com/bar371/my-spiel)", Accept: "application/json" } });
-      if (res.ok || attempt >= 3 || ![429, 500, 502, 503, 504].includes(res.status)) break;
-      await new Promise(r => setTimeout(r, 2000 * 2 ** attempt));
+      const res = await fetch(url, { headers: { "User-Agent": "my-spiel planner importer (github.com/bar371/my-spiel)", Accept: "application/json" } });
+      const text = await res.text();
+      try { if (res.ok) { body = JSON.parse(text); break; } } catch (_) { /* retry below */ }
+      if (attempt >= 5) throw new Error(`${url} -> HTTP ${res.status}: ${text.slice(0, 300)}`);
+      console.log(`page ${page}: HTTP ${res.status}, not JSON; retrying`);
+      await new Promise(r => setTimeout(r, 3000 * 2 ** attempt));
     }
-    if (!res.ok) throw new Error(`${url} -> HTTP ${res.status}: ${(await res.text()).slice(0, 300)}`);
-    const body = await res.json();
     const batch = Array.isArray(body) ? body : body.items || body.data || [];
     if (page === 1) console.log("Sample item:\n" + JSON.stringify(batch[0], null, 1).slice(0, 4000));
     if (!batch.length) break;

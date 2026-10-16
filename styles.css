@@ -367,3 +367,14 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 .visit-fields input[type=time] { width: 8.6em; }
 .visit-new { background: var(--paper-2); border-radius: 14px; padding: 12px; margin: 8px 0 4px; }
 .visit-new .btn { margin-top: 10px; }
+
+/* ---------- Favorites ---------- */
+.tile-col { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.fav-btn {
+  font: inherit; font-size: 1.35rem; line-height: 1; padding: 4px 6px; border: 0; border-radius: 10px;
+  background: transparent; color: #b89a66; cursor: pointer;
+}
+.fav-btn.on { color: #e0a800; text-shadow: 0 1px 0 rgba(0,0,0,.15); }
+.fav-btn.big { font-size: .95rem; font-weight: 800; padding: 6px 11px; background: var(--paper-2); color: var(--ink-soft); box-shadow: 0 3px 0 #b89a66; }
+.fav-btn.big.on { background: #fff0c4; color: #7a5a00; box-shadow: 0 3px 0 #e0b84a; }
+.pill.fav { background: #fff6d8; color: #7a5a00; border-color: #f0d27a; }
