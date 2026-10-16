@@ -2,12 +2,15 @@
 // Run: python3 -m http.server 8765 & npm i --no-save playwright-core && node tests/e2e.js
 // (set CHROMIUM_PATH to a Chromium binary if Playwright has none installed)
 const { chromium } = require('playwright-core');
+const FIXTURE = require("fs").readFileSync(require("path").join(__dirname, "fixtures/sample-seed.js"), "utf8");
+const useFixture = ctx => ctx.route("**/data/spiel-data.js", r => r.fulfill({ contentType: "application/javascript", body: FIXTURE }));
+
 const SP = require('os').tmpdir(), URL = process.env.APP_URL || 'http://localhost:8765/';
 let pass = 0, fail = 0;
 const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++; console.log('  ✗ FAIL:', m); } };
 (async () => {
   const b = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined });
-  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, acceptDownloads: true });
+  const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, acceptDownloads: true }); await useFixture(ctx);
   const p = await ctx.newPage();
   const errs = []; p.on('pageerror', e => errs.push(e.message)); p.on('console', m => m.type()==='error' && errs.push(m.text()));
   p.on('dialog', d => d.accept());
@@ -130,7 +133,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   shared = await p.evaluate(() => navigator.clipboard.readText().catch(() => null));
   if (!shared) shared = await p.locator('#sheet textarea').inputValue().catch(() => null);
   ok(shared && shared.includes('#plan='), 'share link produced (' + (shared||'').length + ' chars)');
-  const ctx2 = await b.newContext({ viewport: { width: 390, height: 844 } });
+  const ctx2 = await b.newContext({ viewport: { width: 390, height: 844 } }); await useFixture(ctx2);
   const q = await ctx2.newPage(); q.on('pageerror', e => errs.push('dev2: ' + e.message));
   await q.goto(shared); await q.waitForTimeout(300);
   ok((await q.locator('.player').count()) === 4, 'new device: picker first');
@@ -167,7 +170,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(await p.locator('.game-card').count() === 0, 'samples stay cleared after reload');
 
   console.log('Offline (service worker)');
-  const ctx3 = await b.newContext({ viewport: { width: 390, height: 844 } });
+  const ctx3 = await b.newContext({ viewport: { width: 390, height: 844 } }); await useFixture(ctx3);
   const r = await ctx3.newPage();
   await r.goto(URL); await r.waitForFunction(() => navigator.serviceWorker.controller || navigator.serviceWorker.ready);
   await r.reload(); await r.waitForTimeout(800);

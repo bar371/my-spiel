@@ -86,8 +86,9 @@ Add an entry to `games` in `data/spiel-data.js`:
 }
 ```
 
-The four `sample: true` games are placeholders (booths and times are made up).
-Delete them from the file, or tap **More → Remove sample games** in the app.
+The shared list starts with 32 SPIEL 2026 games compiled from preview articles (marked `preview: true`, each linking to its source).
+Booths and demo times are mostly unpublished, so add them with **Edit game** in the app (shared with the crew when sync is on) or in this file.
+The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
 

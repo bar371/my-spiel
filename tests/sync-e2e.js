@@ -2,6 +2,9 @@
 // Run: python3 -m http.server 8765 & npm i --no-save playwright-core && node tests/sync-e2e.js
 const { chromium } = require("playwright-core");
 const startMock = require("./mock-firebase");
+const FIXTURE = require("fs").readFileSync(require("path").join(__dirname, "fixtures/sample-seed.js"), "utf8");
+const useFixture = ctx => ctx.route("**/data/spiel-data.js", r => r.fulfill({ contentType: "application/javascript", body: FIXTURE }));
+
 const APP = process.env.APP_URL || "http://localhost:8765/";
 const DBURL = "http://localhost:8766";
 let pass = 0, fail = 0;
@@ -15,6 +18,7 @@ const norm = s => s.replace(/ /g, " ");
   async function phone(name) {
     const ctx = await b.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
     await ctx.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await useFixture(ctx);
     await ctx.route("**/data/sync-config.js", r => r.fulfill({ contentType: "application/javascript", body: `window.SPIEL_SYNC = { databaseURL: "${DBURL}" };` }));
     await ctx.addInitScript(() => { try { Object.defineProperty(navigator, "share", { value: undefined }); } catch (_) {} });
     const p = await ctx.newPage();
