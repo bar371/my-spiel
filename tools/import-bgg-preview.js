@@ -23,6 +23,7 @@ const first = (...vals) => vals.find(v => v !== undefined && v !== null && Strin
 const num = v => { const n = parseFloat(String(v ?? "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? n : undefined; };
 const norm = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")
   .replace(/&/g, "and").replace(/[^a-z0-9]+/g, " ").trim();
+const bare = s => String(s || "").replace(/\s*\([^)]*\)\s*$/, "").replace(/[°]/g, "");
 const slug = s => norm(s).replace(/ /g, "-");
 const strip = s => String(s || "")
   .replace(/<br\s*\/?>/gi, "\n").replace(/<\/p>/gi, "\n").replace(/<[^>]+>/g, "")
@@ -59,6 +60,16 @@ async function fetchItems() {
   return items;
 }
 
+// Publishers type booths freely ("3G200", "Hall 6 6D405", "H2D410", "5.K415 (Japon Brand)",
+// "Asmodee, Halle 7"); turn them into hall "3" + booth "3-G200" where possible.
+function parseBooth(loc) {
+  if (!loc) return {};
+  const m = loc.match(/(?:^|[^0-9A-Z])(?:hall[e]?\s*|h)?(\d{1,2})\s*[-.,]?\s*([A-Z])\s*-?(\d{2,4})(?![0-9])/i);
+  if (m) return { hall: String(+m[1]), booth: `${+m[1]}-${m[2].toUpperCase()}${m[3]}` };
+  const h = loc.match(/\bhall[e]?\s*(\d{1,2})\b/i);
+  return { hall: h ? String(+h[1]) : undefined, booth: loc };
+}
+
 function toGame(it) {
   const gi = (it.geekitem && (it.geekitem.item || it.geekitem)) || it.item || {};
   const objectid = first(it.objectid, gi.objectid, gi.id);
@@ -74,9 +85,7 @@ function toGame(it) {
   // Booth, e.g. "3-A100", "Hall 3 A100", "6B200"
   const locs = [it.location, ...(Array.isArray(it.publishers) ? it.publishers.map(p => p.location) : [])]
     .map(l => strip(l)).filter(Boolean);
-  const booth = locs[0] || undefined;
-  const hallMatch = booth && booth.match(/^(?:hall\s*)?(\d{1,2})(?![0-9])/i);
-  const hall = hallMatch ? hallMatch[1] : undefined;
+  const { hall, booth } = parseBooth(locs[0]);
 
   const price = num(first(it.showprice, it.msrp, it.price));
   const href = first(gi.href, it.href);
@@ -109,23 +118,48 @@ function loadSeed() {
 
 function merge(seed, bggGames) {
   const kept = seed.games.filter(g => g.bgg === undefined || g.preview); // drop stale imports, keep hand-written ones
-  const byName = new Map(kept.map(g => [norm(g.name), g]));
+  const byName = new Map();
+  kept.forEach(g => { byName.set(norm(g.name), g); if (!byName.has(norm(bare(g.name)))) byName.set(norm(bare(g.name)), g); });
+  // "Foundation" (preview) vs "Foundation: Isaac Asimov" (BGG), same publisher
+  const sameGame = (g, b) => {
+    const a = norm(g.name), c = norm(b.name), pa = norm(g.publisher), pb = norm(b.publisher);
+    return a && c && (c.startsWith(a + " ") || a.startsWith(c + " ")) && pa && pb &&
+      (pa.includes(pb.split(" ")[0]) || pb.includes(pa.split(" ")[0]));
+  };
   const byBgg = new Map(kept.filter(g => g.bgg !== undefined).map(g => [String(g.bgg), g]));
   const bggId = g => { const m = String(g.url || "").match(/boardgamegeek\.com\/boardgame(?:expansion)?\/(\d+)/); return m && m[1]; };
   kept.forEach(g => { const id = bggId(g); if (id && !byBgg.has(id)) byBgg.set(id, g); });
 
+  // "dlp games stand" gives way to a real booth such as "3-C115"
+  const vagueBooth = (k, g) => k === "booth" && !/\d\s*-?\s*[A-Z]\s*\d{2}/i.test(g.booth);
   const ids = new Set(kept.map(g => g.id));
   const added = [];
   let enriched = 0;
-  const seen = new Set();
-  for (const b of bggGames) {
-    if (seen.has(String(b.bgg))) continue;
-    seen.add(String(b.bgg));
-    const match = byBgg.get(String(b.bgg)) || byName.get(norm(b.name));
+  // The same game can be listed more than once (several publishers or editions): combine them
+  const byId = new Map();
+  bggGames.forEach(b => {
+    const prev = byId.get(String(b.bgg));
+    if (!prev) return byId.set(String(b.bgg), { ...b });
+    Object.keys(b).forEach(k => { if (prev[k] === undefined) prev[k] = b[k]; });
+  });
+  const unique = [...byId.values()];
+  // Exact matches first, so a loose name match can't take a game that has an exact one
+  const matches = new Map(), taken = new Set();
+  unique.forEach(b => {
+    const m = byBgg.get(String(b.bgg)) || byName.get(norm(b.name)) || byName.get(norm(bare(b.name)));
+    if (m && !taken.has(m.id)) { matches.set(b, m); taken.add(m.id); }
+  });
+  unique.forEach(b => {
+    if (matches.has(b)) return;
+    const m = kept.find(g => g.preview && !taken.has(g.id) && sameGame(g, b));
+    if (m) { matches.set(b, m); taken.add(m.id); }
+  });
+  for (const b of unique) {
+    const match = matches.get(b);
     if (match) {
       let touched = false;
       for (const k of ["publisher", "hall", "booth", "players", "duration", "price"])
-        if (b[k] !== undefined && (match[k] === undefined || match[k] === "")) { match[k] = b[k]; touched = true; }
+        if (b[k] !== undefined && (match[k] === undefined || match[k] === "" || vagueBooth(k, match))) { match[k] = b[k]; touched = true; }
       if (match.bgg === undefined) { match.bgg = b.bgg; touched = true; }
       if (touched) enriched++;
       continue;
@@ -136,7 +170,7 @@ function merge(seed, bggGames) {
     added.push({ ...b, id });
   }
   added.sort((a, b) => a.name.localeCompare(b.name));
-  return { games: [...kept, ...added], added: added.length, enriched, kept: kept.length };
+  return { games: [...kept, ...added], added: added.length, enriched, kept: kept.length, unique: unique.length };
 }
 
 // Same style as the hand-written entries: {"id": "x", "name": "Y", …}
@@ -169,7 +203,7 @@ ${games.map(g => "    " + fmt(g)).join(",\n")}
   const bggGames = items.map(toGame).filter(Boolean);
   if (!bggGames.length) throw new Error(`no games parsed from ${items.length} preview items`);
   const seed = loadSeed();
-  const { games, added, enriched, kept } = merge(seed, bggGames);
-  write(seed, games, bggGames.length);
-  console.log(`BGG preview: ${items.length} items, ${bggGames.length} games. Kept ${kept}, enriched ${enriched}, added ${added}. Total ${games.length}.`);
+  const { games, added, enriched, kept, unique } = merge(seed, bggGames);
+  write(seed, games, unique);
+  console.log(`BGG preview: ${items.length} items, ${unique} games. Kept ${kept}, enriched ${enriched}, added ${added}. Total ${games.length}.`);
 })().catch(e => { console.error(e); process.exit(1); });

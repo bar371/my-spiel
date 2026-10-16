@@ -86,8 +86,13 @@ Add an entry to `games` in `data/spiel-data.js`:
 }
 ```
 
-The shared list starts with 32 SPIEL 2026 games compiled from preview articles (marked `preview: true`, each linking to its source).
-Booths and demo times are mostly unpublished, so add them with **Edit game** in the app (shared with the crew when sync is on) or in this file.
+The shared list holds the full BoardGameGeek SPIEL 2026 preview (boardgamegeek.com/geekpreviewv2/93, about 1,250 games
+with booth, price and player count where the publisher gave them; `bgg` is the BoardGameGeek id) plus 32 games compiled
+from preview articles (marked `preview: true`, each linking to its source).
+Demo times are unpublished, so add them with **Edit game** in the app (shared with the crew when sync is on) or in this file.
+
+To refresh the BGG games, run the **Import BGG SPIEL preview** workflow (Actions tab), or locally
+`node tools/import-bgg-preview.js`. It keeps the preview games, only filling their empty fields from BGG.
 The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
