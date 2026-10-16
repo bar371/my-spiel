@@ -1,0 +1,44 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check JavaScript syntax
+        run: |
+          node --check app.js
+          node --check sw.js
+          node -e "global.window={}; require('./data/spiel-data.js'); const s=window.SPIEL_SEED; if(!s||!s.members||!s.games) throw new Error('bad seed data'); console.log(s.games.length+' games, '+s.members.length+' members')"
+
+      - name: Build site
+        run: |
+          mkdir -p _site
+          cp -r index.html styles.css app.js sw.js manifest.webmanifest .nojekyll data icons _site/
+          # New cache name per deploy so phones pick up the update
+          sed -i "s/__BUILD__/${GITHUB_SHA::8}/" _site/sw.js
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

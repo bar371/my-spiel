@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>SPIEL '26 Planner</title>
+  <meta name="description" content="Our crew's planner for SPIEL Essen 2026: demo sessions, schedule and shopping budget.">
+  <meta name="theme-color" content="#5a3a22">
+
+  <!-- iOS home-screen app -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="SPIEL '26">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <link rel="icon" type="image/svg+xml" href="icons/icon.svg">
+  <link rel="manifest" href="manifest.webmanifest">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="meeple" viewBox="0 0 24 24">
+      <path d="M12 1.5a4.2 4.2 0 0 1 4.2 4.2c0 1.2-.5 2.3-1.3 3.1 3 .4 6.6 1.7 6.6 3.8 0 1.1-1.3 1.6-3.4 1.3l2.4 6.3c.3.9-.3 1.8-1.2 1.8h-3.8L12 16.4 8.5 22H4.7c-.9 0-1.5-.9-1.2-1.8l2.4-6.3c-2.1.3-3.4-.2-3.4-1.3 0-2.1 3.6-3.4 6.6-3.8a4.2 4.2 0 0 1 2.9-7.3z"/>
+    </symbol>
+    <symbol id="die" viewBox="0 0 24 24">
+      <rect x="2.5" y="2.5" width="19" height="19" rx="4.5" fill="none" stroke="currentColor" stroke-width="2"/>
+      <circle cx="8" cy="8" r="1.7"/><circle cx="16" cy="8" r="1.7"/><circle cx="12" cy="12" r="1.7"/>
+      <circle cx="8" cy="16" r="1.7"/><circle cx="16" cy="16" r="1.7"/>
+    </symbol>
+  </svg>
+
+  <header class="topbar">
+    <div class="brand">
+      <svg class="brand-die"><use href="#die"/></svg>
+      <div>
+        <h1>SPIEL <span>'26</span></h1>
+        <p id="countdown" class="countdown"></p>
+      </div>
+    </div>
+    <button id="who" class="who" aria-label="Switch player"></button>
+  </header>
+
+  <nav class="days" id="days" aria-label="Fair days"></nav>
+
+  <main id="view" class="view" tabindex="-1"></main>
+
+  <nav class="tabbar" aria-label="Sections">
+    <button data-tab="schedule" class="active"><span class="ti">🗓️</span><span>My day</span></button>
+    <button data-tab="games"><span class="ti">🎲</span><span>Games</span></button>
+    <button data-tab="crew"><span class="ti">👥</span><span>Crew</span></button>
+    <button data-tab="budget"><span class="ti">💰</span><span>Budget</span></button>
+    <button data-tab="settings"><span class="ti">⚙️</span><span>More</span></button>
+  </nav>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-card" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <button class="sheet-x" data-close aria-label="Close">✕</button>
+      <div id="sheet-body"></div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+  <script src="data/spiel-data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
