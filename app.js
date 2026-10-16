@@ -107,7 +107,7 @@
   const slug = s => String(s).toLowerCase().normalize("NFKD").replace(/[^\w]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) || "game";
   const uid = p => `${p}-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
   function hue(str) { let h = 0; for (const c of str) h = (h * 31 + c.charCodeAt(0)) % 360; return h; }
-  const initials = name => name.split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase();
+  const initials = name => name.replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join("").toUpperCase() || "?";
   const safeUrl = u => /^https?:\/\//i.test(u || "") ? u : "";
   const dur = m => (m >= 60 ? `${Math.floor(m / 60)}h ` : "") + (m % 60 ? `${m % 60}m` : "").trim();
 
@@ -203,7 +203,7 @@
     return html + `<div class="board"><div class="timeline">${parts.join("")}</div></div>`;
   }
   const fmt = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-  const hallPill = g => (g.hall || g.booth) ? `<span class="pill">🏛 Hall ${esc(g.hall || "?")}${g.booth ? ` · ${esc(g.booth)}` : ""}</span>` : "";
+  const hallPill = g => (g.hall || g.booth) ? `<span class="pill">🏛 ${[g.hall && `Hall ${g.hall}`, g.booth].filter(Boolean).map(esc).join(" · ")}</span>` : "";
 
   function viewGames() {
     const plan = myPlan();
@@ -212,6 +212,7 @@
     if (ui.filter === "joining") list = list.filter(g => (g.sessions || []).some(s => plan.sessions.includes(s.id)));
     if (ui.filter === "buy") list = list.filter(g => plan.buy[g.id]);
     const anySample = games().some(g => g.sample);
+    const nPreview = games().filter(g => g.preview).length;
 
     const chips = [["all", "All"], ["joining", "Joining"], ["buy", "Buy list"]]
       .map(([k, l]) => `<button class="btn small ${ui.filter === k ? "" : "secondary"}" data-action="filter" data-filter="${k}">${l}</button>`).join("");
@@ -221,6 +222,7 @@
       <button class="btn" data-action="new">＋ Add</button></div>
       <div class="row" style="margin-bottom:12px">${chips}</div>
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
+      ${nPreview && !ui.query ? `<div class="banner">📰 ${nPreview} hyped SPIEL 2026 games from preview articles. Booths and demo times mostly aren't published yet, so add them with <b>Edit game</b> once you know them.</div>` : ""}
       <p class="muted small" style="color:var(--paper);opacity:.8;margin:0 4px 8px">${list.length} game${list.length === 1 ? "" : "s"}</p>
       ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
       ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}`;
@@ -239,6 +241,7 @@
         <p class="desc-short">${esc(g.description || "")}</p>
         <div class="meta">
           ${g.sample ? `<span class="pill sample">sample</span>` : ""}
+          ${g.preview ? `<span class="pill preview">preview</span>` : ""}
           ${hallPill(g)}
           <span class="pill">🕒 ${(g.sessions || []).length} session${(g.sessions || []).length === 1 ? "" : "s"}</span>
           ${g.price ? `<span class="pill">${eur.format(g.price)}</span>` : ""}
@@ -388,16 +391,19 @@
       <h2 id="sheet-title">${esc(g.name)}</h2>
       ${g.publisher ? `<p class="publisher">${esc(g.publisher)}</p>` : ""}
       ${g.sample ? `<p><span class="pill sample">sample data: check booth &amp; times</span></p>` : ""}
+      ${g.preview ? `<p><span class="pill preview">from preview articles: check details at the fair</span></p>` : ""}
       <div class="facts">
-        <div class="fact"><small>Hall / booth</small><b>${esc(g.hall || "?")} · ${esc(g.booth || "?")}</b></div>
+        <div class="fact"><small>Hall / booth</small><b>${g.hall || g.booth ? [g.hall, g.booth].filter(Boolean).map(esc).join(" · ") : "?"}</b></div>
         <div class="fact"><small>Players</small><b>${esc(g.players || "?")}</b></div>
         <div class="fact"><small>Play time</small><b>${esc(g.duration || "?")}</b></div>
         <div class="fact"><small>Fair price</small><b>${g.price ? eur.format(g.price) : "?"}</b></div>
       </div>
       ${g.description ? `<p class="desc">${esc(g.description)}</p>` : ""}
-      ${url ? `<p><a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">🔗 Game page</a></p>` : ""}
+      ${url ? `<p><a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">🔗 ${g.preview ? "Source" : "Game page"}</a>
+        <a class="btn secondary small" href="https://boardgamegeek.com/geeksearch.php?action=search&amp;objecttype=boardgame&amp;q=${encodeURIComponent(g.name)}" target="_blank" rel="noopener">🎲 BoardGameGeek</a></p>` : ""}
 
       <h3>🕒 Demo sessions</h3>
+      ${!sessions.length && g.preview ? `<p class="muted">No demo times known yet. Tap <b>Edit game</b> to add one; with crew sync on, everyone sees it.</p>` : ""}
       ${sessions.length ? sessions.map(s => {
         const on = plan.sessions.includes(s.id);
         if (!attending(s.day) && !on) return `<div class="session off">
@@ -413,7 +419,7 @@
           </div>
           <button class="btn small ${on ? "secondary" : "green"}" data-action="join" data-session="${esc(s.id)}">${on ? "Leave" : "Join"}</button>
         </div>`;
-      }).join("") : `<p class="muted">No sessions listed yet. Edit the game to add times.</p>`}
+      }).join("") : g.preview ? "" : `<p class="muted">No sessions listed yet. Edit the game to add times.</p>`}
 
       <h3>🛒 Buying it?</h3>
       <div class="buybox">

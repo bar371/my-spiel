@@ -150,6 +150,7 @@ a { color: #1f5b9a; }
 .pill.ok { background: #dff3e6; color: var(--ok); border-color: #b1dfc1; }
 .pill.gold { background: #fff0c4; color: #7a5a00; border-color: #f0d27a; }
 .pill.sample { background: #ece4f7; color: #6a4c93; border-color: #d4c4ea; }
+.pill.preview { background: #e3eef9; color: #2d5c8a; border-color: #bcd3ea; }
 
 .meeples { display: inline-flex; align-items: center; }
 .meeples svg { width: 20px; height: 20px; margin-right: -4px; filter: drop-shadow(0 1px 0 rgba(0,0,0,.35)); }
