@@ -6,7 +6,7 @@
  *     currentMember            who is using this device
  *     customGames[]            games added or edited in the app (override seed by id)
  *     hiddenGames[]            seed game ids removed in the app
- *     plans{memberId}          { sessions[], visits[], buy{gameId:{price,prio,bought}}, budget, notes{}, updatedAt }
+ *     plans{memberId}          { sessions[], visits[], favs[gameId], buy{gameId:{price,prio,bought}}, budget, notes{}, updatedAt }
  *                              visits are booth visits planned without a demo session:
  *                              { id, game, day, start, end }
  *     crewCode                 shared crew id for live sync (see data/sync-config.js)
@@ -27,7 +27,7 @@
   const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
 
   // ---------- Persistence ----------
-  const emptyPlan = () => ({ sessions: [], visits: [], buy: {}, budget: 0, notes: {}, updatedAt: 0 });
+  const emptyPlan = () => ({ sessions: [], visits: [], favs: [], buy: {}, budget: 0, notes: {}, updatedAt: 0 });
 
   function load() {
     let db = null;
@@ -71,12 +71,16 @@
     return (gamesCache = list.sort((a, b) => a.name.localeCompare(b.name)));
   }
   const tagsOf = g => Array.isArray(g.tags) ? g.tags : [];
-  // Tags in the order the seed lists them (SEED.tags), then any custom ones A–Z
+  // Filter chips that follow from the game itself rather than its tags, so a demo time
+  // added in the app shows up under "Demo slot" straight away
+  const STATUS_TAGS = { "Preview": "📰 Preview", "Demo slot": "🎲 Demo slot" };
+  const filterTagsOf = g => [...(g.preview ? ["Preview"] : []), ...((g.sessions || []).length ? ["Demo slot"] : []), ...tagsOf(g)];
+  // Status chips first, then tags in the order the seed lists them (SEED.tags), then any custom ones A–Z
   let tagsCache = null;
   function allTags() {
     if (tagsCache && tagsCache.list === gamesCache) return tagsCache.tags;
-    const seen = new Set(); games().forEach(g => tagsOf(g).forEach(t => seen.add(t)));
-    const order = Array.isArray(SEED.tags) ? SEED.tags : [];
+    const seen = new Set(); games().forEach(g => filterTagsOf(g).forEach(t => seen.add(t)));
+    const order = [...Object.keys(STATUS_TAGS), ...(Array.isArray(SEED.tags) ? SEED.tags : [])];
     const tags = [...order.filter(t => seen.has(t)), ...[...seen].filter(t => !order.includes(t)).sort((a, b) => a.localeCompare(b))];
     tagsCache = { list: gamesCache, tags };
     return tags;
@@ -100,6 +104,10 @@
     return isNaN(dt) ? date : dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   };
   const overlaps = (a, b) => a.day === b.day && mins(a.start) < mins(b.end) && mins(b.start) < mins(a.end);
+  const isFav = (memberId, gid) => (db.plans[memberId].favs || []).includes(gid);
+  const whoFavs = gid => MEMBERS.filter(m => isFav(m.id, gid));
+  const favButton = (g, big) => { const on = isFav(db.currentMember, g.id);
+    return `<button class="fav-btn ${on ? "on" : ""} ${big ? "big" : ""}" data-action="fav" data-game="${esc(g.id)}" aria-pressed="${on}" aria-label="${on ? "Remove from favorites" : "Add to favorites"}" title="Favorite">${on ? "★" : "☆"}${big ? ` ${on ? "Favorite" : "Add to favorites"}` : ""}</button>`; };
   const whoJoins = sid => MEMBERS.filter(m => db.plans[m.id].sessions.includes(sid));
   const whoJoinsGame = g => MEMBERS.filter(m => planItems(m.id).some(x => x.g.id === g.id));
 
@@ -283,18 +291,19 @@
     let list = games().filter(g => !q || [g.name, g.publisher, g.description, ...tagsOf(g)].join(" ").toLowerCase().includes(q));
     if (ui.filter === "joining") { const planned = new Set(planItems(db.currentMember).map(x => x.g.id)); list = list.filter(g => planned.has(g.id)); }
     if (ui.filter === "buy") list = list.filter(g => plan.buy[g.id]);
+    if (ui.filter === "favs") list = list.filter(g => isFav(db.currentMember, g.id));
     // Tags narrow the list: a game must have every selected tag
-    list = list.filter(g => ui.tags.every(t => tagsOf(g).includes(t)));
+    list = list.filter(g => ui.tags.every(t => filterTagsOf(g).includes(t)));
     const tagCounts = new Map();
-    list.forEach(g => tagsOf(g).forEach(t => tagCounts.set(t, (tagCounts.get(t) || 0) + 1)));
+    list.forEach(g => filterTagsOf(g).forEach(t => tagCounts.set(t, (tagCounts.get(t) || 0) + 1)));
     const tagChips = [...ui.tags, ...allTags().filter(t => tagCounts.has(t) && !ui.tags.includes(t))]
       .map(t => { const on = ui.tags.includes(t);
-        return `<button class="btn small tag-chip ${on ? "" : "secondary"}" data-action="tag" data-tag="${esc(t)}" aria-pressed="${on}">${esc(t)}${on ? "" : ` <span class="count">${tagCounts.get(t) || 0}</span>`}</button>`; })
+        return `<button class="btn small tag-chip ${on ? "" : "secondary"}" data-action="tag" data-tag="${esc(t)}" aria-pressed="${on}">${esc(STATUS_TAGS[t] || t)}${on ? "" : ` <span class="count">${tagCounts.get(t) || 0}</span>`}</button>`; })
       .join("");
     const anySample = games().some(g => g.sample);
     const nPreview = games().filter(g => g.preview).length;
 
-    const chips = [["all", "All"], ["joining", "Planned"], ["buy", "Buy list"]]
+    const chips = [["all", "All"], ["joining", "Planned"], ["favs", "★ Favorites"], ["buy", "Buy list"]]
       .map(([k, l]) => `<button class="btn small ${ui.filter === k ? "" : "secondary"}" data-action="filter" data-filter="${k}">${l}</button>`).join("");
 
     return `<h2 class="section-title">🎲 Games at SPIEL</h2>
@@ -314,7 +323,7 @@
     const joining = planItems(db.currentMember).filter(x => x.g.id === g.id).length;
     const h = hue(g.name);
     return `<article class="card tap game-card" data-action="open" data-game="${esc(g.id)}">
-      <div class="game-tile" style="background:hsl(${h} 55% 45%)">${esc(initials(g.name))}</div>
+      <div class="tile-col"><div class="game-tile" style="background:hsl(${h} 55% 45%)">${esc(initials(g.name))}</div>${favButton(g)}</div>
       <div>
         ${meeples(whoJoinsGame(g))}
         <h3 class="game-name" style="padding-right:${whoJoinsGame(g).length * 16 + 4}px">${esc(g.name)}</h3>
@@ -328,6 +337,7 @@
           <span class="pill">🕒 ${(g.sessions || []).length} session${(g.sessions || []).length === 1 ? "" : "s"}</span>
           ${g.price ? `<span class="pill">${eur.format(g.price)}</span>` : ""}
           ${joining ? `<span class="pill ok">✓ Planned</span>` : ""}
+          ${whoFavs(g.id).filter(m => m.id !== db.currentMember).length ? `<span class="pill fav">★ ${esc(whoFavs(g.id).filter(m => m.id !== db.currentMember).map(m => m.name).join(", "))}</span>` : ""}
           ${plan.buy[g.id] ? `<span class="pill gold">🛒 ${plan.buy[g.id].bought ? "Bought" : "Buy list"}</span>` : ""}
         </div>
       </div></article>`;
@@ -342,12 +352,16 @@
       const when = p.updatedAt ? new Date(p.updatedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "no plan yet";
       return `<div class="card crew-member">${meeple(m.color)}
         <div><h4>${esc(m.name)}${m.id === db.currentMember ? " <span class='pill gold'>you</span>" : ""}</h4>
-        <p>${n} plan${n === 1 ? "" : "s"} · ${eur.format(spend)} on the buy list · ${esc(when)}</p></div>
+        <p>${n} plan${n === 1 ? "" : "s"} · ★ ${(p.favs || []).filter(id => gameById(id)).length} · ${eur.format(spend)} on the buy list · ${esc(when)}</p></div>
         ${m.id === db.currentMember && !crewBase() ? `<button class="btn small" data-action="share">Share</button>` : ""}</div>`;
     }).join("");
 
     // Every session or booth visit anyone in the crew planned on the selected day
     const going = crewItems(day.date);
+    // Games anyone starred, most-liked first
+    const crewFavs = [...new Set(MEMBERS.flatMap(m => db.plans[m.id].favs || []))]
+      .map(id => ({ g: gameById(id), who: whoFavs(id) })).filter(x => x.g)
+      .sort((a, b) => b.who.length - a.who.length || a.g.name.localeCompare(b.g.name));
 
     const banner = crewBase()
       ? `<div class="banner live">${sync.state === "live" ? "🟢 <b>Live.</b> Everyone's picks update here automatically." : "○ Connecting to the crew… changes are saved and will sync."}</div>`
@@ -364,6 +378,13 @@
               ${who.some(m => m.id === db.currentMember) ? `<span class="pill gold">you're in</span>` : ""}</div></div>
         </article>`).join("")
         : `<div class="empty"><span class="big">🗺️</span><b>Nobody has planned anything on ${esc(day.label)} yet</b><p>Demo sessions and booth visits anyone in the crew plans show up here with their meeples.</p></div>`}
+      ${crewFavs.length ? `<h2 class="section-title">⭐ Crew favorites</h2>
+      ${crewFavs.map(({ g, who }) => `<article class="card tap going ${who.length > 1 ? "together" : ""}" data-action="open" data-game="${esc(g.id)}">
+          <div class="going-time"><b>★ ${who.length}</b></div>
+          <div><h3 class="game-name">${esc(g.name)}</h3>
+            <div class="meta">${meeples(who)}<span class="small">${esc(who.map(m => m.name).join(", "))}</span></div>
+            <div class="meta">${hallPill(g)}${planItems(db.currentMember).some(x => x.g.id === g.id) ? `<span class="pill ok">✓ planned</span>` : ""}</div></div>
+        </article>`).join("")}` : ""}
       <h2 class="section-title">👥 The crew</h2>
       <div class="crew-grid">${cards}</div>`;
   }
@@ -514,6 +535,7 @@
 
     openSheet(`
       <h2 id="sheet-title">${esc(g.name)}</h2>
+      <div class="row" style="margin:6px 0 8px">${favButton(g, true)}${whoFavs(g.id).filter(m => m.id !== db.currentMember).length ? `<span class="small muted">${meeples(whoFavs(g.id).filter(m => m.id !== db.currentMember))} also liked by ${esc(whoFavs(g.id).filter(m => m.id !== db.currentMember).map(m => m.name).join(", "))}</span>` : ""}</div>
       ${g.publisher ? `<p class="publisher">${esc(g.publisher)}</p>` : ""}
       ${g.sample ? `<p><span class="pill sample">sample data: check booth &amp; times</span></p>` : ""}
       ${g.preview ? `<p><span class="pill preview">from preview articles: check details at the fair</span></p>` : ""}
@@ -601,7 +623,7 @@
         </div>
         <label class="field">Description<textarea name="description">${esc(g.description || "")}</textarea></label>
         <label class="field">Tags <span class="muted small">(comma-separated, e.g. Engine building, Co-op)</span><input name="tags" value="${esc(tagsOf(g).join(", "))}" list="tag-options" autocomplete="off"></label>
-        <datalist id="tag-options">${allTags().map(t => `<option value="${esc(t)}">`).join("")}</datalist>
+        <datalist id="tag-options">${allTags().filter(t => !STATUS_TAGS[t]).map(t => `<option value="${esc(t)}">`).join("")}</datalist>
         <h3>🕒 Sessions</h3>
         <div id="sess-list">${(g.sessions || []).map(sessionRow).join("")}</div>
         <button type="button" class="btn small secondary" data-action="add-session">＋ Add session</button>
@@ -745,6 +767,7 @@
   const cleanPlan = p => {
     const plan = Object.assign(emptyPlan(), p);
     plan.sessions = asList(p.sessions).filter(x => typeof x === "string");
+    plan.favs = asList(p.favs).filter(x => typeof x === "string");
     plan.visits = asList(p.visits).filter(v => isObj(v) && ["id", "game", "day", "start", "end"].every(k => typeof v[k] === "string"));
     plan.buy = isObj(p.buy) ? p.buy : {};
     plan.notes = isObj(p.notes) ? p.notes : {};
@@ -914,6 +937,12 @@
         const g = gameById(gid);
         plan.buy[gid] = { price: g.price ?? "", prio: "must", bought: false };
         touch(db.currentMember); render(); refreshSheet(); toast("Added to buy list");
+        break;
+      }
+      case "fav": {
+        plan.favs = isFav(db.currentMember, gid) ? plan.favs.filter(id => id !== gid) : [...(plan.favs || []), gid];
+        touch(db.currentMember); render(); refreshSheet();
+        toast(isFav(db.currentMember, gid) ? "★ Added to favorites" : "Removed from favorites");
         break;
       }
       case "add-visit": {

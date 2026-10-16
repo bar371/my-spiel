@@ -70,6 +70,10 @@ const norm = s => s.replace(/ /g, " ");
   ok(await until(async () => (await crewText(B, "2026-10-23")).includes("Bar, Naomi")), "Naomi sees Bar join her game");
   await A.click(".sheet-x").catch(() => {});
 
+  console.log("Favorites");
+  await tab(B, "games"); await B.click('.game-card[data-game="heat"] .fav-btn');
+  ok(await until(async () => { await tab(A, "crew"); const t = norm(await A.locator("#view").innerText()); return t.includes("Crew favorites") && t.includes("Heat"); }), "Bar sees Naomi's favorite");
+
   console.log("Booth visits");
   await tab(B, "games"); await B.click('[data-game="sky-team"]');
   await B.selectOption("#visit-day", "2026-10-24"); await B.fill("#visit-start", "13:00"); await B.selectOption("#visit-len", "30");
