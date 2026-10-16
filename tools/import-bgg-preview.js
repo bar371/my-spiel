@@ -70,6 +70,55 @@ function parseBooth(loc) {
   return { hall: h ? String(+h[1]) : undefined, booth: loc };
 }
 
+// ---------- Tags ----------
+// A short, fixed list of game types to filter on. Each tag matches BGG mechanic, category
+// and subdomain names ("bgg") and, as a fallback for games BGG hasn't classified yet,
+// words in the name and description ("text").
+const TAG_RULES = [
+  ["Engine building",   { bgg: /engine building|tableau building|tech trees|income/,                 text: /engine[- ]?build|build (?:up )?(?:an?|your) engine|tableau[- ]build/ }],
+  ["Deck building",     { bgg: /deck,? bag,? and pool building|deck construction/,                   text: /deck[- ]?build|bag[- ]build|pool[- ]build/ }],
+  ["Worker placement",  { bgg: /worker placement/,                                                    text: /worker[- ]placement|place (?:your )?workers/ }],
+  ["Drafting",          { bgg: /drafting/,                                                            text: /draft/ }],
+  ["Tile laying",       { bgg: /tile placement|grid coverage|polyomino/,                              text: /tile[- ](?:laying|placement|placing)|place (?:the )?tiles|polyomino/ }],
+  ["Set collection",    { bgg: /set collection/,                                                      text: /set collection|collect sets/ }],
+  ["Area control",      { bgg: /area majority|area control|influence/,                                text: /area (?:control|majority)|majorit(?:y|ies)\b|control (?:the )?(?:regions|territor)/ }],
+  ["PvP / conflict",    { bgg: /take that|player elimination|fighting|wargame|conflict|dueling/, text: /\bpvp\b|take[- ]that|attack (?:your )?(?:opponent|rival)s?|battle|duel|combat|warfare|skirmish/ }],
+  ["Co-op",             { bgg: /cooperative game|semi-cooperative|team-based/,                        text: /\bco-?op(?:erative)?\b|work together|together against/ }],
+  ["Trick-taking",      { bgg: /trick-taking|ladder climbing/,                                       text: /trick[- ]?taking|ladder[- ]climbing/ }],
+  ["Bluffing & deduction", { bgg: /bluffing|deduction|hidden roles|traitor|social deduction/,         text: /bluff|deduc|hidden (?:role|identit)|traitor|whodunit|mystery/ }],
+  ["Push your luck",    { bgg: /push your luck|press your luck/,                                      text: /push[- ]your[- ]luck|press[- ]your[- ]luck/ }],
+  ["Roll & write",      { bgg: /paper-and-pencil|roll and write|flip and write|write-in/,             text: /(?:roll|flip)[- ](?:and|&|n|'n')[- ]write|roll[- ]?&[- ]?write/ }],
+  ["Dice",              { bgg: /^dice$|dice rolling|dice placement/,                                  text: /\bdice\b/ }],
+  ["Negotiation & trading", { bgg: /negotiation|trading|auction|bidding|bribery|market/,             text: /negotiat|auction|bidding|bid for|\btrading\b/ }],
+  ["Real-time",         { bgg: /real-time|speed matching/,                                            text: /real[- ]time|speed game|as fast as/ }],
+  ["Puzzle",            { bgg: /puzzle|pattern building|spatial|pattern recognition/,                text: /puzzl|spatial/ }],
+  ["Abstract",          { bgg: /abstract/,                                                            text: /\babstract\b/ }],
+  ["Party",             { bgg: /party/,                                                               text: /party game|for (?:big |large )?groups|word game|drawing game|trivia/ }],
+  ["Family",            { bgg: /family games|children's game/,                                        text: /\bfamil(?:y|ies)\b|\bkids?\b|children/ }],
+  ["Economic",          { bgg: /economic|stock holding|investment|loans/,                             text: /econom|stock market|\binvest/ }],
+  ["Adventure & campaign", { bgg: /adventure|exploration|dungeon|campaign|legacy|scenario|storytelling|role playing/, text: /adventur|dungeon|campaign|legacy|\bquests?\b/ }],
+  ["Card game",         { bgg: /^card game$/,                                                         text: /card game/ }]
+];
+
+const tagsFrom = ({ bggNames = [], text = "", minP, maxP, minT, maxT, expansion }) => {
+  const names = bggNames.map(n => String(n).toLowerCase());
+  const t = String(text).toLowerCase();
+  const tags = TAG_RULES.filter(([, r]) => names.some(n => r.bgg.test(n)) || r.text.test(t)).map(([tag]) => tag);
+  if (num(minP) === 1) tags.push("Solo");
+  if (num(maxP) === 2 || (!maxP && /\b(?:two|2)[- ]player|\bfor two\b|\bduel/.test(t))) tags.push("2 players");
+  if (num(maxP) >= 6) tags.push("6+ players");
+  const tMax = num(maxT) || num(minT);
+  if (tMax && tMax <= 30) tags.push("Quick (≤30 min)");
+  if (num(minT) >= 120 || num(maxT) >= 150) tags.push("Long (2h+)");
+  if (expansion) tags.push("Expansion");
+  return tags;
+};
+const TAG_ORDER = [...TAG_RULES.map(([t]) => t), "Solo", "2 players", "6+ players", "Quick (≤30 min)", "Long (2h+)", "Expansion"];
+const sortTags = tags => [...new Set(tags)].sort((a, b) => TAG_ORDER.indexOf(a) - TAG_ORDER.indexOf(b));
+// "1–4" → [1, 4], "90 min" → [90, 90], "up to 6" → [undefined, 6]
+const bounds = s => { const n = String(s || "").match(/\d+(?:\.\d+)?/g) || []; return /up to/i.test(s) ? [undefined, n[0]] : [n[0], n[1] || n[0]]; };
+const bggStats = { linkKeys: {}, names: {} };
+
 function toGame(it) {
   const gi = (it.geekitem && (it.geekitem.item || it.geekitem)) || it.item || {};
   const objectid = first(it.objectid, gi.objectid, gi.id);
@@ -92,6 +141,23 @@ function toGame(it) {
   const url = href ? (href.startsWith("http") ? href : `https://boardgamegeek.com${href}`)
     : `https://boardgamegeek.com/boardgame/${objectid}`;
   const desc = strip(first(it.description, it.short_description, gi.short_description, gi.description));
+  const links = gi.links || {};
+  const bggNames = [];
+  Object.keys(links).forEach(k => {
+    bggStats.linkKeys[k] = (bggStats.linkKeys[k] || 0) + 1;
+    if (/mechanic|category|subdomain/.test(k) && Array.isArray(links[k])) links[k].forEach(l => {
+      if (!l || !l.name) return;
+      bggNames.push(l.name);
+      bggStats.names[`${k}: ${l.name}`] = (bggStats.names[`${k}: ${l.name}`] || 0) + 1;
+    });
+  });
+  const subtypes = [].concat(gi.subtypes || [], gi.subtype || [], it.objecttype || []).join(" ");
+  const tags = sortTags(tagsFrom({
+    bggNames, text: `${name} ${desc} ${strip(gi.short_description)}`,
+    minP: first(gi.minplayers, it.minplayers), maxP: first(gi.maxplayers, it.maxplayers),
+    minT: first(gi.minplaytime, it.minplaytime), maxT: first(gi.maxplaytime, it.maxplaytime),
+    expansion: /expansion/.test(subtypes) || /\/boardgameexpansion\//.test(href || "")
+  }));
   const g = {
     id: `bgg-${objectid}`,
     bgg: Number(objectid) || String(objectid),
@@ -104,6 +170,7 @@ function toGame(it) {
     price,
     url,
     description: desc ? clip(desc) : undefined,
+    tags: tags.length ? tags : undefined,
     sessions: []
   };
   Object.keys(g).forEach(k => g[k] === undefined && delete g[k]);
@@ -161,6 +228,7 @@ function merge(seed, bggGames) {
       for (const k of ["publisher", "hall", "booth", "players", "duration", "price"])
         if (b[k] !== undefined && (match[k] === undefined || match[k] === "" || vagueBooth(k, match))) { match[k] = b[k]; touched = true; }
       if (match.bgg === undefined) { match.bgg = b.bgg; touched = true; }
+      if (b.tags) match.tags = sortTags([...(match.tags || []), ...b.tags]);
       if (touched) enriched++;
       continue;
     }
@@ -169,6 +237,13 @@ function merge(seed, bggGames) {
     ids.add(id);
     added.push({ ...b, id });
   }
+  // Keyword tags for the hand-written games (on top of any BGG tags they got above)
+  kept.forEach(g => {
+    const [minP, maxP] = bounds(g.players), [minT, maxT] = bounds(g.duration);
+    const t = sortTags([...(g.tags || []), ...tagsFrom({ text: `${g.name} ${g.description || ""}`, minP, maxP, minT, maxT,
+      expansion: /^(?:expansion|add-on)\b|\badd-on\b|base game required/i.test(g.description || "") })]);
+    if (t.length) g.tags = t;
+  });
   added.sort((a, b) => a.name.localeCompare(b.name));
   return { games: [...kept, ...added], added: added.length, enriched, kept: kept.length, unique: unique.length };
 }
@@ -205,5 +280,10 @@ ${games.map(g => "    " + fmt(g)).join(",\n")}
   const seed = loadSeed();
   const { games, added, enriched, kept, unique } = merge(seed, bggGames);
   write(seed, games, unique);
+  console.log("BGG link types:", JSON.stringify(bggStats.linkKeys));
+  console.log("Top BGG mechanics/categories:\n" + Object.entries(bggStats.names).sort((a, b) => b[1] - a[1]).slice(0, 150).map(([k, v]) => `  ${v}\t${k}`).join("\n"));
+  const tagCount = {};
+  games.forEach(g => (g.tags || []).forEach(t => { tagCount[t] = (tagCount[t] || 0) + 1; }));
+  console.log("Tags:", JSON.stringify(tagCount), "| untagged:", games.filter(g => !(g.tags || []).length).length);
   console.log(`BGG preview: ${items.length} items, ${unique} games. Kept ${kept}, enriched ${enriched}, added ${added}. Total ${games.length}.`);
 })().catch(e => { console.error(e); process.exit(1); });
