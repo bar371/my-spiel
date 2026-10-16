@@ -21,10 +21,10 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(await p.locator('.player').count() === 4, '4 members shown');
   await p.click('.sheet-backdrop', { position: { x: 10, y: 10 } });
   ok(await p.isVisible('#sheet'), 'first-run picker cannot be dismissed');
-  await p.click('[data-member="annemike"]');
-  ok((await text('#who')).includes('Annemike'), 'header shows Annemike');
+  await p.click('[data-member="annemieke"]');
+  ok((await text('#who')).includes('Annemieke'), 'header shows Annemieke');
   await p.reload();
-  ok(!(await p.isVisible('#sheet')) && (await text('#who')).includes('Annemike'), 'player remembered after reload');
+  ok(!(await p.isVisible('#sheet')) && (await text('#who')).includes('Annemieke'), 'player remembered after reload');
   await p.click('#who'); await p.click('[data-member="sjord"]');
   ok((await text('#who')).includes('Sjord'), 'switch player works');
   await p.click('#who'); await p.keyboard.press('Escape');
