@@ -75,7 +75,7 @@ function parseBooth(loc) {
 // and subdomain names ("bgg") and, as a fallback for games BGG hasn't classified yet,
 // words in the name and description ("text").
 const TAG_RULES = [
-  ["Engine building",   { bgg: /engine building|tableau building|tech trees|income/,                 text: /engine[- ]?build|build (?:up )?(?:an?|your) engine|tableau[- ]build/ }],
+  ["Engine building",   { bgg: /engine building|tableau building|tech trees|income|chaining/,       text: /(?<!steam |fire |game |rocket )\bengines?\b|tableau[- ]build|\bcombos?\b|synerg/ }],
   ["Deck building",     { bgg: /deck,? bag,? and pool building|deck construction/,                   text: /deck[- ]?build|bag[- ]build|pool[- ]build/ }],
   ["Worker placement",  { bgg: /worker placement/,                                                    text: /worker[- ]placement|place (?:your )?workers/ }],
   ["Drafting",          { bgg: /drafting/,                                                            text: /draft/ }],
@@ -83,27 +83,37 @@ const TAG_RULES = [
   ["Set collection",    { bgg: /set collection/,                                                      text: /set collection|collect sets/ }],
   ["Area control",      { bgg: /area majority|area control|influence/,                                text: /area (?:control|majority)|majorit(?:y|ies)\b|control (?:the )?(?:regions|territor)/ }],
   ["PvP / conflict",    { bgg: /take that|player elimination|fighting|wargame|conflict|dueling/, text: /\bpvp\b|take[- ]that|attack (?:your )?(?:opponent|rival)s?|battle|duel|combat|warfare|skirmish/ }],
-  ["Co-op",             { bgg: /cooperative game|semi-cooperative|team-based/,                        text: /\bco-?op(?:erative)?\b|work together|together against/ }],
+  ["Co-op",             { bgg: /cooperative game/,                                                    text: /\bco-?op(?:erative)?\b|work together|together against/ }],
   ["Trick-taking",      { bgg: /trick-taking|ladder climbing/,                                       text: /trick[- ]?taking|ladder[- ]climbing/ }],
   ["Bluffing & deduction", { bgg: /bluffing|deduction|hidden roles|traitor|social deduction/,         text: /bluff|deduc|hidden (?:role|identit)|traitor|whodunit|mystery/ }],
   ["Push your luck",    { bgg: /push your luck|press your luck/,                                      text: /push[- ]your[- ]luck|press[- ]your[- ]luck/ }],
   ["Roll & write",      { bgg: /paper-and-pencil|roll and write|flip and write|write-in/,             text: /(?:roll|flip)[- ](?:and|&|n|'n')[- ]write|roll[- ]?&[- ]?write/ }],
   ["Dice",              { bgg: /^dice$|dice rolling|dice placement/,                                  text: /\bdice\b/ }],
-  ["Negotiation & trading", { bgg: /negotiation|trading|auction|bidding|bribery|market/,             text: /negotiat|auction|bidding|bid for|\btrading\b/ }],
+  ["Negotiation & auctions", { bgg: /negotiation|trading|auction|bidding|bribery/,             text: /negotiat|auction|bidding|bid for|\btrading\b/ }],
   ["Real-time",         { bgg: /real-time|speed matching/,                                            text: /real[- ]time|speed game|as fast as/ }],
   ["Puzzle",            { bgg: /puzzle|pattern building|spatial|pattern recognition/,                text: /puzzl|spatial/ }],
   ["Abstract",          { bgg: /abstract/,                                                            text: /\babstract\b/ }],
   ["Party",             { bgg: /party/,                                                               text: /party game|for (?:big |large )?groups|word game|drawing game|trivia/ }],
   ["Family",            { bgg: /family games|children's game/,                                        text: /\bfamil(?:y|ies)\b|\bkids?\b|children/ }],
   ["Economic",          { bgg: /economic|stock holding|investment|loans/,                             text: /econom|stock market|\binvest/ }],
-  ["Adventure & campaign", { bgg: /adventure|exploration|dungeon|campaign|legacy|scenario|storytelling|role playing/, text: /adventur|dungeon|campaign|legacy|\bquests?\b/ }],
+  ["Adventure & campaign", { bgg: /adventure|dungeon|campaign|legacy|scenario|storytelling|role playing|narrative/, text: /adventur|dungeon|campaign|legacy|\bquests?\b/ }],
   ["Card game",         { bgg: /^card game$/,                                                         text: /card game/ }]
 ];
+
+// Hand-picked tags for the preview-article games, from what the articles say about them
+const MANUAL_TAGS = {
+  "wingspan-pocket": ["Engine building"]
+};
 
 const tagsFrom = ({ bggNames = [], text = "", minP, maxP, minT, maxT, expansion }) => {
   const names = bggNames.map(n => String(n).toLowerCase());
   const t = String(text).toLowerCase();
   const tags = TAG_RULES.filter(([, r]) => names.some(n => r.bgg.test(n)) || r.text.test(t)).map(([tag]) => tag);
+  // Fighting monsters together isn't PvP: keep the conflict tag on co-op games only when
+  // players also act against each other
+  if (tags.includes("Co-op") && tags.includes("PvP / conflict") &&
+      !names.some(n => /take that|player elimination|semi-cooperative|traitor|wargame/.test(n)) && !/\bpvp\b|take[- ]that/.test(t))
+    tags.splice(tags.indexOf("PvP / conflict"), 1);
   if (num(minP) === 1) tags.push("Solo");
   if (num(maxP) === 2 || (!maxP && /\b(?:two|2)[- ]player|\bfor two\b|\bduel/.test(t))) tags.push("2 players");
   if (num(maxP) >= 6) tags.push("6+ players");
@@ -200,6 +210,7 @@ function merge(seed, bggGames) {
   // "dlp games stand" gives way to a real booth such as "3-C115"
   const vagueBooth = (k, g) => k === "booth" && !/\d\s*-?\s*[A-Z]\s*\d{2}/i.test(g.booth);
   const ids = new Set(kept.map(g => g.id));
+  const bggTags = new Map();
   const added = [];
   let enriched = 0;
   // The same game can be listed more than once (several publishers or editions): combine them
@@ -228,7 +239,7 @@ function merge(seed, bggGames) {
       for (const k of ["publisher", "hall", "booth", "players", "duration", "price"])
         if (b[k] !== undefined && (match[k] === undefined || match[k] === "" || vagueBooth(k, match))) { match[k] = b[k]; touched = true; }
       if (match.bgg === undefined) { match.bgg = b.bgg; touched = true; }
-      if (b.tags) match.tags = sortTags([...(match.tags || []), ...b.tags]);
+      bggTags.set(match, b.tags || []);
       if (touched) enriched++;
       continue;
     }
@@ -237,12 +248,13 @@ function merge(seed, bggGames) {
     ids.add(id);
     added.push({ ...b, id });
   }
-  // Keyword tags for the hand-written games (on top of any BGG tags they got above)
+  // Tags for the hand-written games are rebuilt each run: BGG's (when listed there),
+  // keywords from the description, and MANUAL_TAGS
   kept.forEach(g => {
     const [minP, maxP] = bounds(g.players), [minT, maxT] = bounds(g.duration);
-    const t = sortTags([...(g.tags || []), ...tagsFrom({ text: `${g.name} ${g.description || ""}`, minP, maxP, minT, maxT,
+    const t = sortTags([...(bggTags.get(g) || []), ...(MANUAL_TAGS[g.id] || []), ...tagsFrom({ text: `${g.name} ${g.description || ""}`, minP, maxP, minT, maxT,
       expansion: /^(?:expansion|add-on)\b|\badd-on\b|base game required/i.test(g.description || "") })]);
-    if (t.length) g.tags = t;
+    if (t.length) g.tags = t; else delete g.tags;
   });
   added.sort((a, b) => a.name.localeCompare(b.name));
   return { games: [...kept, ...added], added: added.length, enriched, kept: kept.length, unique: unique.length };

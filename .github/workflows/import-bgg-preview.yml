@@ -38,4 +38,6 @@ jobs:
           git config user.email "41898333+github-actions[bot]@users.noreply.github.com"
           git add data/spiel-data.js
           git commit -m "Import BoardGameGeek SPIEL 2026 preview games"
+          # The branch may have moved while the import ran
+          git pull --rebase origin "${GITHUB_REF_NAME}"
           git push origin HEAD:${GITHUB_REF_NAME}
