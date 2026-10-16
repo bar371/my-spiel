@@ -29,7 +29,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await p.reload();
   ok(!(await p.isVisible('#sheet')) && (await text('#who')).includes('Annemieke'), 'player remembered after reload');
   await p.click('#who'); await p.click('[data-member="sjord"]');
-  ok((await text('#who')).includes('Sjord'), 'switch player works');
+  ok((await text('#who')).includes('Sjoerd'), 'switch player works');
   await p.click('#who'); await p.keyboard.press('Escape');
   ok(!(await p.isVisible('#sheet')), 'Escape closes switch sheet');
 
@@ -226,10 +226,10 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await q.goto(shared); await q.waitForTimeout(300);
   ok((await q.locator('.player').count()) === 4, 'new device: picker first');
   await q.click('[data-member="naomi"]'); await q.waitForTimeout(700);
-  ok((await q.locator('#sheet-body').innerText()).includes("Sjord's plan"), 'import prompt after picking');
+  ok((await q.locator('#sheet-body').innerText()).includes("Sjoerd's plan"), 'import prompt after picking');
   await q.click('[data-action="accept-plan"]');
   const d2 = await q.evaluate(() => JSON.parse(localStorage.getItem('spiel26:v1')));
-  ok(d2.plans.sjord.sessions.length === 1 && d2.customGames.length === 2, 'Sjord plan + custom games imported');
+  ok(d2.plans.sjord.sessions.length === 1 && d2.customGames.length === 2, 'Sjoerd plan + custom games imported');
   ok(d2.plans.sjord.visits.length === 1, 'visits travel with the share link');
   ok(q.url().indexOf('#plan') === -1, 'hash cleared after import');
   await q.click('.tabbar [data-tab="games"]');
