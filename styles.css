@@ -68,7 +68,7 @@ a { color: #1f5b9a; }
 
 /* ---------- Day selector (tiles) ---------- */
 .days {
-  display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+  display: grid; grid-template-columns: repeat(var(--day-count, 4), 1fr); gap: 8px;
   padding: 12px 16px 4px; max-width: 760px; margin: 0 auto;
 }
 .days[hidden] { display: none; }
@@ -219,6 +219,7 @@ a { color: #1f5b9a; }
 }
 .session + .session { margin-top: 8px; }
 .session.on { border-color: var(--accent); background: #fff8e1; }
+.session.off { opacity: .55; border-style: dashed; }
 .session .when { font-family: var(--font-head); font-weight: 600; }
 .session .where { font-size: .82rem; color: var(--ink-soft); }
 

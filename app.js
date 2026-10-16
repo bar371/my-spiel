@@ -44,33 +44,41 @@
   }
   let db = load();
   function save() {
+    invalidate();
     try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
     catch (_) { toast("Couldn't save on this device (private browsing?)"); }
   }
   function touch(memberId) { db.plans[memberId].updatedAt = Date.now(); save(); }
 
   // ---------- Derived data ----------
+  let gamesCache = null, indexCache = null, byIdCache = null;
+  function invalidate() { gamesCache = indexCache = byIdCache = null; }
   function games() {
+    if (gamesCache) return gamesCache;
     const custom = new Map(db.customGames.map(g => [g.id, g]));
     const list = SEED.games
       .filter(g => !db.hiddenGames.includes(g.id))
       .map(g => custom.get(g.id) || g);
     db.customGames.forEach(g => { if (!SEED.games.some(s => s.id === g.id)) list.push(g); });
-    return list.sort((a, b) => a.name.localeCompare(b.name));
+    return (gamesCache = list.sort((a, b) => a.name.localeCompare(b.name)));
   }
   function sessionIndex() {
+    if (indexCache) return indexCache;
     const idx = new Map();
     games().forEach(g => (g.sessions || []).forEach(s => idx.set(s.id, { s, g })));
-    return idx;
+    return (indexCache = idx);
   }
-  const gameById = id => games().find(g => g.id === id);
+  const gameById = id => (byIdCache || (byIdCache = new Map(games().map(g => [g.id, g])))).get(id);
   const member = id => MEMBERS.find(m => m.id === id);
   const me = () => member(db.currentMember);
   const myPlan = () => db.plans[db.currentMember];
   const mins = t => { const [h, m] = (t || "0:0").split(":").map(Number); return h * 60 + m; };
+  const attending = date => DAYS.some(d => d.date === date);
   const dayLabel = date => {
     const d = DAYS.find(x => x.date === date);
-    return d ? `${d.label} ${Number(date.slice(8))} Oct` : date;
+    if (d) return `${d.label} ${Number(date.slice(8))} Oct`;
+    const dt = new Date(date + "T12:00:00");
+    return isNaN(dt) ? date : dt.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
   };
   const overlaps = (a, b) => a.day === b.day && mins(a.start) < mins(b.end) && mins(b.start) < mins(a.end);
   const whoJoins = sid => MEMBERS.filter(m => db.plans[m.id].sessions.includes(sid));
@@ -105,14 +113,17 @@
 
   // ---------- UI state ----------
   const today = new Date().toISOString().slice(0, 10);
+  const PAGE = 40;
   const ui = {
     tab: "schedule",
     day: DAYS.some(d => d.date === today) ? today : DAYS[0].date,
     query: "",
     filter: "all",
+    limit: PAGE,
     sheetGame: null
   };
   try { Object.assign(ui, JSON.parse(sessionStorage.getItem("spiel26:ui") || "{}"), { sheetGame: null }); } catch (_) {}
+  if (!DAYS.some(d => d.date === ui.day)) ui.day = DAYS[0].date;
   const keepUi = () => { try { sessionStorage.setItem("spiel26:ui", JSON.stringify({ tab: ui.tab, day: ui.day, filter: ui.filter })); } catch (_) {} };
 
   // ---------- Header ----------
@@ -120,7 +131,8 @@
     const m = me();
     $("#who").innerHTML = m ? `${meeple(m.color)}<span>${esc(m.name)}</span>` : "Pick player";
     const start = new Date(DAYS[0].date + "T10:00:00");
-    const end = new Date(DAYS[DAYS.length - 1].date + "T18:00:00");
+    const last = DAYS[DAYS.length - 1];
+    const end = new Date(`${last.date}T${last.close}:00`);
     const now = new Date();
     let txt;
     if (now < start) {
@@ -138,6 +150,7 @@
     nav.hidden = ui.tab !== "schedule";
     if (nav.hidden || !me()) return;
     const idx = sessionIndex();
+    nav.style.setProperty("--day-count", DAYS.length);
     nav.innerHTML = DAYS.map(d => {
       const n = myPlan().sessions.filter(id => idx.get(id)?.s.day === d.date).length;
       return `<button class="day ${ui.day === d.date ? "active" : ""}" data-day="${d.date}">
@@ -199,7 +212,9 @@
       <button class="btn" data-action="new">＋ Add</button></div>
       <div class="row" style="margin-bottom:12px">${chips}</div>
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
-      ${list.length ? list.map(gameCard).join("") : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}`;
+      <p class="muted small" style="color:var(--paper);opacity:.8;margin:0 4px 8px">${list.length} game${list.length === 1 ? "" : "s"}</p>
+      ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
+      ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}`;
   }
 
   function gameCard(g) {
@@ -349,6 +364,10 @@
       <h3>🕒 Demo sessions</h3>
       ${sessions.length ? sessions.map(s => {
         const on = plan.sessions.includes(s.id);
+        if (!attending(s.day) && !on) return `<div class="session off">
+          <div><div class="when">${esc(dayLabel(s.day))} · ${esc(s.start)}–${esc(s.end)}</div>
+            <div class="where">${[s.location, s.note].filter(Boolean).map(esc).join(" · ")}</div></div>
+          <span class="pill">not attending</span></div>`;
         const clash = conflictsFor(db.currentMember, s);
         return `<div class="session ${on ? "on" : ""}">
           <div><div class="when">${esc(dayLabel(s.day))} · ${esc(s.start)}–${esc(s.end)}</div>
@@ -445,6 +464,7 @@
     };
     db.customGames = db.customGames.filter(x => x.id !== id).concat(g);
     // Drop picks for sessions that no longer exist
+    invalidate();
     const valid = new Set(sessionIndex().keys());
     MEMBERS.forEach(m => { db.plans[m.id].sessions = db.plans[m.id].sessions.filter(s => valid.has(s)); });
     save();
@@ -532,7 +552,8 @@
         break;
       case "who": pickPlayerSheet(false); break;
       case "open": gameSheet(gid); break;
-      case "filter": ui.filter = el.dataset.filter; render(); break;
+      case "filter": ui.filter = el.dataset.filter; ui.limit = PAGE; render(); break;
+      case "more": ui.limit += PAGE * 2; render(); break;
       case "join": {
         const sid = el.dataset.session;
         const i = plan.sessions.indexOf(sid);
@@ -596,6 +617,7 @@
         if (!confirm(`Remove ${ids.length} sample games?`)) return;
         ids.forEach(id => { if (!db.hiddenGames.includes(id)) db.hiddenGames.push(id); });
         db.customGames = db.customGames.filter(g => !ids.includes(g.id));
+        invalidate();
         const valid = new Set(sessionIndex().keys());
         MEMBERS.forEach(m => { const p = db.plans[m.id]; p.sessions = p.sessions.filter(s => valid.has(s)); ids.forEach(id => delete p.buy[id]); });
         save(); render(); toast("Samples removed");
@@ -604,7 +626,7 @@
       case "reset":
         if (!confirm("Erase every plan and added game on this device?")) return;
         try { localStorage.removeItem(STORE_KEY); } catch (_) {}
-        db = load(); render(); pickPlayerSheet(true);
+        db = load(); invalidate(); render(); pickPlayerSheet(true);
         break;
     }
   });
@@ -613,6 +635,7 @@
     const t = e.target;
     if (t.id === "search") {
       ui.query = t.value;
+      ui.limit = PAGE;
       const pos = t.selectionStart;
       render();
       const s = $("#search"); s.focus(); s.setSelectionRange(pos, pos);

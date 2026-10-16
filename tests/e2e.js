@@ -32,7 +32,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
 
   console.log('Countdown & days');
   ok(/6 days to go/.test(await text('#countdown')), 'countdown: ' + await text('#countdown'));
-  ok(await p.locator('.day').count() === 4, '4 day tiles');
+  ok(await p.locator('.day').count() === 3, '3 day tiles (Thu–Sat)');
+  ok(!(await text('#days')).includes('Sun'), 'no Sunday tile');
   ok((await text('.view')).includes('Nothing planned'), 'empty state on schedule');
 
   console.log('Games: search & filters');
