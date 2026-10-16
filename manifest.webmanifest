@@ -1,0 +1,17 @@
+{
+  "name": "SPIEL '26 Planner",
+  "short_name": "SPIEL '26",
+  "description": "Our crew's planner for SPIEL Essen 2026: demo sessions, schedule and shopping budget.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#5a3a22",
+  "theme_color": "#5a3a22",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
