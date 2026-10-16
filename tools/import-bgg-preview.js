@@ -258,7 +258,10 @@ function write(seed, games, total) {
   const head = src.replace(/\n(?:  \/\/.*\n)*  games: \[[\s\S]*$/, "\n");
   if (head === src) throw new Error("could not find the games list in " + DATA);
   const nPreview = games.filter(g => g.preview).length;
-  const out = head +
+  // Order of the tag filter chips in the app
+  const tagLine = `  tags: ${fmt(TAG_ORDER)},\n`;
+  const withTags = /\n  tags: \[.*\],\n/.test(head) ? head.replace(/\n  tags: \[.*\],\n/, "\n" + tagLine) : head + tagLine + "\n";
+  const out = withTags +
 `  // ${nPreview} games from SPIEL 2026 preview articles (preview: true, each linking to
   // its source) plus the ${total} titles listed in BoardGameGeek's SPIEL 2026 preview
   // (boardgamegeek.com/geekpreviewv2/${PREVIEW_ID}, imported with tools/import-bgg-preview.js;

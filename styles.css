@@ -323,3 +323,17 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 @keyframes rise { from { transform: translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ---------- Game type tags ---------- */
+.tag-row {
+  display: flex; gap: 6px; align-items: center; overflow-x: auto; scrollbar-width: none;
+  margin: 0 -4px 12px; padding: 2px 4px 6px; -webkit-overflow-scrolling: touch;
+}
+.tag-row::-webkit-scrollbar { display: none; }
+.tag-row .tag-chip { flex: none; white-space: nowrap; padding: 5px 10px; font-size: .8rem; }
+.tag-row .tag-chip .count { opacity: .6; font-weight: 700; margin-left: 2px; }
+.tag-row .tag-chip.clear { background: var(--danger); color: #fff; box-shadow: 0 3px 0 #8e2a1f; }
+.tag-label { flex: none; color: var(--paper); opacity: .85; font-weight: 800; font-size: .85rem; margin-right: 2px; }
+.tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+.pill.tag { background: #e4f1ea; color: var(--felt-2); border-color: #bcdcc9; font-size: .72rem; padding: 2px 8px; }
+.pill.tag.on { background: var(--felt); color: #fff; border-color: var(--felt-2); }
