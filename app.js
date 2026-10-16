@@ -6,7 +6,9 @@
  *     currentMember            who is using this device
  *     customGames[]            games added or edited in the app (override seed by id)
  *     hiddenGames[]            seed game ids removed in the app
- *     plans{memberId}          { sessions[], buy{gameId:{price,prio,bought}}, budget, notes{}, updatedAt }
+ *     plans{memberId}          { sessions[], visits[], buy{gameId:{price,prio,bought}}, budget, notes{}, updatedAt }
+ *                              visits are booth visits planned without a demo session:
+ *                              { id, game, day, start, end }
  *     crewCode                 shared crew id for live sync (see data/sync-config.js)
  *
  * Live sync: with a crew code set, every phone mirrors the crew's plans, added
@@ -25,7 +27,7 @@
   const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
 
   // ---------- Persistence ----------
-  const emptyPlan = () => ({ sessions: [], buy: {}, budget: 0, notes: {}, updatedAt: 0 });
+  const emptyPlan = () => ({ sessions: [], visits: [], buy: {}, budget: 0, notes: {}, updatedAt: 0 });
 
   function load() {
     let db = null;
@@ -99,15 +101,53 @@
   };
   const overlaps = (a, b) => a.day === b.day && mins(a.start) < mins(b.end) && mins(b.start) < mins(a.end);
   const whoJoins = sid => MEMBERS.filter(m => db.plans[m.id].sessions.includes(sid));
-  const whoJoinsGame = g => MEMBERS.filter(m => (g.sessions || []).some(s => db.plans[m.id].sessions.includes(s.id)));
+  const whoJoinsGame = g => MEMBERS.filter(m => planItems(m.id).some(x => x.g.id === g.id));
 
-  function conflictsFor(memberId, session) {
-    const idx = sessionIndex();
-    return db.plans[memberId].sessions
-      .filter(id => id !== session.id && idx.has(id))
-      .map(id => idx.get(id))
-      .filter(x => overlaps(x.s, session));
+  // Everything on a member's schedule: joined demo sessions (fixed times) and booth
+  // visits (movable). Each item: { kind, id, day, start, end, location, g, s?, v? }
+  function planItems(memberId, day) {
+    const idx = sessionIndex(), plan = db.plans[memberId];
+    const items = [];
+    plan.sessions.forEach(id => { const x = idx.get(id); if (x) items.push({ kind: "session", id, day: x.s.day, start: x.s.start, end: x.s.end, location: x.s.location, g: x.g, s: x.s }); });
+    (plan.visits || []).forEach(v => { const g = gameById(v.game); if (g) items.push({ kind: "visit", id: v.id, day: v.day, start: v.start, end: v.end, g, v }); });
+    return (day ? items.filter(x => x.day === day) : items).sort((a, b) => mins(a.start) - mins(b.start) || mins(a.end) - mins(b.end));
   }
+
+  // Everything anyone in the crew plans on a day; people visiting the same booth at
+  // the same time are grouped together
+  function crewItems(day) {
+    const groups = new Map();
+    MEMBERS.forEach(m => planItems(m.id, day).forEach(x => {
+      const key = x.kind === "session" ? `s:${x.id}` : `v:${x.g.id}|${x.start}|${x.end}`;
+      if (!groups.has(key)) groups.set(key, { ...x, who: [] });
+      groups.get(key).who.push(m);
+    }));
+    return [...groups.values()].sort((a, b) => mins(a.start) - mins(b.start) || a.g.name.localeCompare(b.g.name));
+  }
+
+  function conflictsFor(memberId, slot) {
+    return planItems(memberId, slot.day).filter(x => x.id !== slot.id && overlaps(x, slot));
+  }
+
+  // Earliest start (15-minute steps) on a day where `length` minutes are free for this member
+  function nextFreeStart(memberId, day, length, from) {
+    const d = DAYS.find(x => x.date === day) || DAYS[0];
+    const open = mins(d.open), close = mins(d.close);
+    let t = Math.max(open, from ?? open);
+    t = Math.ceil(t / 15) * 15;
+    const busy = planItems(memberId, day);
+    for (; t + length <= close; t += 15) {
+      const slot = { day, start: fmt(t), end: fmt(t + length) };
+      if (!busy.some(x => overlaps(x, slot))) return t;
+    }
+    return null;
+  }
+  // A sensible visit length from the game's play time ("30–45 min" → 45), 15–120 minutes
+  const visitLength = g => {
+    const n = String(g.duration || "").match(/\d+/g);
+    const m = n ? Number(n[n.length - 1]) : 45;
+    return Math.min(120, Math.max(15, Math.round(m / 15) * 15));
+  };
 
   // ---------- Helpers ----------
   const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -169,51 +209,68 @@
     const nav = $("#days");
     nav.hidden = ui.tab !== "schedule" && ui.tab !== "crew";
     if (nav.hidden || !me()) return;
-    const idx = sessionIndex();
     const crew = ui.tab === "crew";
-    const ids = crew ? new Set(MEMBERS.flatMap(m => db.plans[m.id].sessions)) : new Set(myPlan().sessions);
     nav.style.setProperty("--day-count", DAYS.length);
     nav.innerHTML = DAYS.map(d => {
-      const n = [...ids].filter(id => idx.get(id)?.s.day === d.date).length;
+      const n = crew ? crewItems(d.date).length : planItems(db.currentMember, d.date).length;
       return `<button class="day ${ui.day === d.date ? "active" : ""}" data-day="${d.date}">
         <b>${d.label}</b><small>${Number(d.date.slice(8))} Oct</small><br><span class="count">${n}</span></button>`;
     }).join("");
   }
 
   // ---------- Views ----------
+  // ---------- My day: a time grid. Visits can be dragged; demo sessions are fixed ----------
+  const PX = 1.6; // pixels per minute
   function viewSchedule() {
-    const idx = sessionIndex();
     const day = DAYS.find(d => d.date === ui.day) || DAYS[0];
-    const mine = myPlan().sessions.map(id => idx.get(id)).filter(x => x && x.s.day === day.date)
-      .sort((a, b) => mins(a.s.start) - mins(b.s.start));
-
+    const items = planItems(db.currentMember, day.date);
     let html = `<h2 class="section-title">${esc(dayLabel(day.date))} <span class="pill">${day.open}–${day.close}</span></h2>`;
-    if (!mine.length) {
+    if (!items.length) {
       return html + `<div class="empty"><span class="big">🧩</span><b>Nothing planned yet</b>
-        <p>Open a game and join one of its demo sessions to fill this day.</p>
+        <p>Open a game and join a demo session, or plan a visit to its booth.</p>
         <button class="btn" data-action="tab" data-tab="games">Browse games</button></div>`;
     }
-    let cursor = mins(day.open);
-    const parts = [];
-    mine.forEach(({ s, g }) => {
-      const gap = mins(s.start) - cursor;
-      if (gap >= 30) parts.push(`<div class="slot free"><span class="time">${fmt(cursor)}</span><span class="dot" style="background:transparent"></span>
-        <div class="card small">☕ ${dur(gap)} free: browse the halls</div></div>`);
-      const clash = conflictsFor(db.currentMember, s);
-      parts.push(`<div class="slot ${clash.length ? "conflict" : ""}">
-        <span class="time">${esc(s.start)}<small>${esc(s.end)}</small></span><span class="dot"></span>
-        <article class="card tap" data-action="open" data-game="${esc(g.id)}">
-          ${meeples(whoJoins(s.id))}
-          <h3 class="game-name">${esc(g.name)}</h3>
-          <div class="meta">
-            ${hallPill(g)}
-            ${s.location ? `<span class="pill">📍 ${esc(s.location)}</span>` : ""}
-            ${clash.length ? `<span class="pill warn">⚠ Clashes with ${esc(clash.map(c => c.g.name).join(", "))}</span>` : ""}
-          </div>
-        </article></div>`);
-      cursor = Math.max(cursor, mins(s.end));
+    const open = mins(day.open), close = Math.max(mins(day.close), ...items.map(x => mins(x.end)));
+    const first = Math.min(open, ...items.map(x => mins(x.start)));
+    const hours = [];
+    for (let h = Math.ceil(first / 60) * 60; h <= close; h += 60)
+      hours.push(`<div class="hour" style="top:${(h - first) * PX}px"><span>${fmt(h)}</span></div>`);
+
+    // Side-by-side columns for items that overlap
+    const lanes = [], placed = [];
+    items.forEach(x => {
+      let lane = lanes.findIndex(end => end <= mins(x.start));
+      if (lane < 0) { lane = lanes.length; lanes.push(0); }
+      lanes[lane] = mins(x.end);
+      placed.push({ x, lane });
     });
-    return html + `<div class="board"><div class="timeline">${parts.join("")}</div></div>`;
+    placed.forEach(p => {
+      const group = placed.filter(q => overlaps(q.x, p.x));
+      p.cols = Math.max(...group.map(q => q.lane)) + 1;
+    });
+
+    const blocks = placed.map(({ x, lane, cols }) => {
+      const clash = conflictsFor(db.currentMember, x);
+      const top = (mins(x.start) - first) * PX, h = Math.max(26, (mins(x.end) - mins(x.start)) * PX - 3);
+      const visit = x.kind === "visit";
+      return `<article class="pblock ${visit ? "pblock-visit" : "pblock-session"} ${clash.length ? "conflict" : ""} ${h < 46 ? "short" : ""}"
+          data-item="${esc(x.id)}" style="top:${top}px;height:${h}px;left:calc(${lane} * (100% / ${cols}));width:calc(100% / ${cols} - 4px)">
+        ${visit ? `<span class="grip" data-drag="move" title="Drag to move" aria-label="Move ${esc(x.g.name)}">⠿</span>` : `<span class="lock" title="Demo session: fixed time">🔒</span>`}
+        <div class="block-body tap" data-action="open" data-game="${esc(x.g.id)}">
+          <b class="block-name">${esc(x.g.name)}</b>
+          <span class="block-time">${esc(x.start)}–${esc(x.end)}${visit ? " · booth visit" : " · demo"}</span>
+          <span class="block-where">${[hallText(x.g), x.location].filter(Boolean).map(esc).join(" · ")}</span>
+          ${clash.length ? `<span class="block-warn">⚠ clashes with ${esc(clash.map(c => c.g.name).join(", "))}</span>` : ""}
+        </div>
+        ${visit ? `<span class="resize" data-drag="resize" title="Drag to change length" aria-label="Change length"></span>` : ""}
+      </article>`;
+    }).join("");
+
+    const fixable = items.some(x => x.kind === "visit" && conflictsFor(db.currentMember, x).length);
+    return html + `<div class="board"><div class="dayplan" data-first="${first}" data-close="${close}" style="height:${(close - first) * PX}px">
+        ${hours.join("")}<div class="blocks">${blocks}</div></div></div>
+      <p class="hint">⠿ Drag a booth visit to move it, or its bottom edge to change its length. 🔒 Demo sessions keep their times.</p>
+      ${fixable ? `<button class="btn block" data-action="fix-clashes">🪄 Fix clashes: move visits to free time</button>` : ""}`;
   }
   const fmt = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
   // "Hall 6 · F300" rather than "Hall 6 · 6-F300"
@@ -224,7 +281,7 @@
     const plan = myPlan();
     const q = ui.query.trim().toLowerCase();
     let list = games().filter(g => !q || [g.name, g.publisher, g.description, ...tagsOf(g)].join(" ").toLowerCase().includes(q));
-    if (ui.filter === "joining") list = list.filter(g => (g.sessions || []).some(s => plan.sessions.includes(s.id)));
+    if (ui.filter === "joining") { const planned = new Set(planItems(db.currentMember).map(x => x.g.id)); list = list.filter(g => planned.has(g.id)); }
     if (ui.filter === "buy") list = list.filter(g => plan.buy[g.id]);
     // Tags narrow the list: a game must have every selected tag
     list = list.filter(g => ui.tags.every(t => tagsOf(g).includes(t)));
@@ -237,7 +294,7 @@
     const anySample = games().some(g => g.sample);
     const nPreview = games().filter(g => g.preview).length;
 
-    const chips = [["all", "All"], ["joining", "Joining"], ["buy", "Buy list"]]
+    const chips = [["all", "All"], ["joining", "Planned"], ["buy", "Buy list"]]
       .map(([k, l]) => `<button class="btn small ${ui.filter === k ? "" : "secondary"}" data-action="filter" data-filter="${k}">${l}</button>`).join("");
 
     return `<h2 class="section-title">🎲 Games at SPIEL</h2>
@@ -254,7 +311,7 @@
 
   function gameCard(g) {
     const plan = myPlan();
-    const joining = (g.sessions || []).filter(s => plan.sessions.includes(s.id)).length;
+    const joining = planItems(db.currentMember).filter(x => x.g.id === g.id).length;
     const h = hue(g.name);
     return `<article class="card tap game-card" data-action="open" data-game="${esc(g.id)}">
       <div class="game-tile" style="background:hsl(${h} 55% 45%)">${esc(initials(g.name))}</div>
@@ -270,32 +327,27 @@
           ${hallPill(g)}
           <span class="pill">🕒 ${(g.sessions || []).length} session${(g.sessions || []).length === 1 ? "" : "s"}</span>
           ${g.price ? `<span class="pill">${eur.format(g.price)}</span>` : ""}
-          ${joining ? `<span class="pill ok">✓ Joining</span>` : ""}
+          ${joining ? `<span class="pill ok">✓ Planned</span>` : ""}
           ${plan.buy[g.id] ? `<span class="pill gold">🛒 ${plan.buy[g.id].bought ? "Bought" : "Buy list"}</span>` : ""}
         </div>
       </div></article>`;
   }
 
   function viewCrew() {
-    const idx = sessionIndex();
     const day = DAYS.find(d => d.date === ui.day) || DAYS[0];
     const cards = MEMBERS.map(m => {
       const p = db.plans[m.id];
-      const n = p.sessions.filter(id => idx.has(id)).length;
+      const n = planItems(m.id).length;
       const spend = Object.values(p.buy).reduce((t, b) => t + (Number(b.price) || 0), 0);
       const when = p.updatedAt ? new Date(p.updatedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "no plan yet";
       return `<div class="card crew-member">${meeple(m.color)}
         <div><h4>${esc(m.name)}${m.id === db.currentMember ? " <span class='pill gold'>you</span>" : ""}</h4>
-        <p>${n} session${n === 1 ? "" : "s"} · ${eur.format(spend)} on the buy list · ${esc(when)}</p></div>
+        <p>${n} plan${n === 1 ? "" : "s"} · ${eur.format(spend)} on the buy list · ${esc(when)}</p></div>
         ${m.id === db.currentMember && !crewBase() ? `<button class="btn small" data-action="share">Share</button>` : ""}</div>`;
     }).join("");
 
-    // Every session anyone in the crew has joined on the selected day
-    const going = [...idx.values()]
-      .filter(x => x.s.day === day.date)
-      .map(x => ({ ...x, who: whoJoins(x.s.id) }))
-      .filter(x => x.who.length)
-      .sort((a, b) => mins(a.s.start) - mins(b.s.start) || a.g.name.localeCompare(b.g.name));
+    // Every session or booth visit anyone in the crew planned on the selected day
+    const going = crewItems(day.date);
 
     const banner = crewBase()
       ? `<div class="banner live">${sync.state === "live" ? "🟢 <b>Live.</b> Everyone's picks update here automatically." : "○ Connecting to the crew… changes are saved and will sync."}</div>`
@@ -303,15 +355,15 @@
 
     return `<h2 class="section-title">🗺️ Who's going where · ${esc(dayLabel(day.date))}</h2>
       ${banner}
-      ${going.length ? going.map(({ s, g, who }) => `<article class="card tap going ${who.length > 1 ? "together" : ""}" data-action="open" data-game="${esc(g.id)}">
-          <div class="going-time"><b>${esc(s.start)}</b><small>${esc(s.end)}</small></div>
+      ${going.length ? going.map(({ kind, start, end, location, g, who }) => `<article class="card tap going ${who.length > 1 ? "together" : ""}" data-action="open" data-game="${esc(g.id)}">
+          <div class="going-time"><b>${esc(start)}</b><small>${esc(end)}</small></div>
           <div><h3 class="game-name">${esc(g.name)}</h3>
             <div class="meta">${meeples(who)}<span class="small">${esc(who.map(m => m.name).join(", "))}</span></div>
-            <div class="meta">${hallPill(g)}${s.location ? `<span class="pill">📍 ${esc(s.location)}</span>` : ""}
+            <div class="meta">${kind === "visit" ? `<span class="pill">🙋 booth visit</span>` : `<span class="pill">🎲 demo</span>`}${hallPill(g)}${location ? `<span class="pill">📍 ${esc(location)}</span>` : ""}
               ${who.length > 1 ? `<span class="pill ok">🤝 together</span>` : ""}
               ${who.some(m => m.id === db.currentMember) ? `<span class="pill gold">you're in</span>` : ""}</div></div>
         </article>`).join("")
-        : `<div class="empty"><span class="big">🗺️</span><b>Nobody has joined a session on ${esc(day.label)} yet</b><p>Sessions anyone in the crew joins show up here with their meeples.</p></div>`}
+        : `<div class="empty"><span class="big">🗺️</span><b>Nobody has planned anything on ${esc(day.label)} yet</b><p>Demo sessions and booth visits anyone in the crew plans show up here with their meeples.</p></div>`}
       <h2 class="section-title">👥 The crew</h2>
       <div class="crew-grid">${cards}</div>`;
   }
@@ -405,6 +457,54 @@
     $("#sheet").dataset.locked = first ? "1" : "";
   }
 
+  const dayOptions = sel => DAYS.map(d => `<option value="${d.date}" ${d.date === sel ? "selected" : ""}>${esc(dayLabel(d.date))}</option>`).join("");
+  const LENGTHS = [15, 30, 45, 60, 75, 90, 120, 150, 180];
+  const lengthOptions = sel => [...new Set([...LENGTHS, sel])].sort((a, b) => a - b)
+    .map(n => `<option value="${n}" ${n === sel ? "selected" : ""}>${dur(n)}</option>`).join("");
+
+  // Plan time at a game's booth, with or without a demo session
+  function visitSection(g) {
+    const mine = (myPlan().visits || []).filter(v => v.game === g.id)
+      .sort((a, b) => a.day.localeCompare(b.day) || mins(a.start) - mins(b.start));
+    const others = MEMBERS.filter(m => m.id !== db.currentMember)
+      .flatMap(m => (db.plans[m.id].visits || []).filter(v => v.game === g.id).map(v => ({ m, v })));
+    const len = visitLength(g);
+    const day = ui.day;
+    const t = nextFreeStart(db.currentMember, day, len);
+    return `<h3>🙋 Visit the booth</h3>
+      ${mine.map(v => {
+        const clash = conflictsFor(db.currentMember, { ...v });
+        return `<div class="session on visit-row" data-visit="${esc(v.id)}">
+          <div class="visit-fields">
+            <select data-visit-field="day" aria-label="Day">${dayOptions(v.day)}</select>
+            <input type="time" step="900" data-visit-field="start" value="${esc(v.start)}" aria-label="Start">
+            <select data-visit-field="len" aria-label="Length">${lengthOptions(mins(v.end) - mins(v.start))}</select>
+            ${clash.length ? `<div class="meta"><span class="pill warn">⚠ Clashes with ${esc(clash.map(c => c.g.name).join(", "))}</span></div>` : ""}
+          </div>
+          <button class="btn small secondary" data-action="rm-visit" data-visit="${esc(v.id)}">Remove</button>
+        </div>`;
+      }).join("")}
+      ${others.length ? `<p class="small muted">${others.map(({ m, v }) => `${meeple(m.color, 'style="width:16px;height:16px;vertical-align:-3px"')} ${esc(m.name)}: ${esc(dayLabel(v.day))} ${esc(v.start)}–${esc(v.end)}`).join("<br>")}</p>` : ""}
+      <div class="visit-new">
+        <p class="muted small" style="margin:0 0 8px">${mine.length ? "Add another visit:" : "No demo needed: block time on your day to play or look at it at the stand."}</p>
+        <div class="visit-fields">
+          <select id="visit-day" aria-label="Day">${dayOptions(day)}</select>
+          <input id="visit-start" type="time" step="900" value="${t == null ? DAYS.find(d => d.date === day).open : fmt(t)}" aria-label="Start">
+          <select id="visit-len" aria-label="Length">${lengthOptions(len)}</select>
+        </div>
+        <button class="btn block green" data-action="add-visit" data-game="${esc(g.id)}">＋ Add to my day</button>
+      </div>`;
+  }
+
+  // Validates and returns { start, end } or null (with a toast)
+  function visitTimes(day, start, length) {
+    const d = DAYS.find(x => x.date === day);
+    if (!d || !/^\d{1,2}:\d{2}$/.test(start || "")) { toast("Pick a day and a start time"); return null; }
+    const a = mins(start), b = a + length;
+    if (a < mins(d.open) || b > mins(d.close)) { toast(`The fair is open ${d.open}–${d.close}`); return null; }
+    return { start: fmt(a), end: fmt(b) };
+  }
+
   function gameSheet(id) {
     const g = gameById(id); if (!g) return closeSheet();
     const plan = myPlan();
@@ -427,6 +527,8 @@
       ${g.description ? `<p class="desc">${esc(g.description)}</p>` : ""}
       ${url ? `<p><a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">🔗 ${g.preview ? "Source" : "Game page"}</a>
         <a class="btn secondary small" href="https://boardgamegeek.com/geeksearch.php?action=search&amp;objecttype=boardgame&amp;q=${encodeURIComponent(g.name)}" target="_blank" rel="noopener">🎲 BoardGameGeek</a></p>` : ""}
+
+      ${visitSection(g)}
 
       <h3>🕒 Demo sessions</h3>
       ${!sessions.length && g.preview ? `<p class="muted">No demo times known yet. Tap <b>Edit game</b> to add one; with crew sync on, everyone sees it.</p>` : ""}
@@ -581,10 +683,10 @@
     if (RENAMED[data.m]) data.m = RENAMED[data.m];
     const who = member(data.m);
     if (!who || !data.p) { toast("That share link looks broken"); return false; }
-    const n = (data.p.sessions || []).length;
+    const n = (data.p.sessions || []).length + (data.p.visits || []).length;
     const isMe = data.m === db.currentMember;
     openSheet(`<h2>${meeple(who.color, 'style="width:32px;height:32px;vertical-align:-6px"')} ${esc(who.name)}'s plan</h2>
-      <p>${n} session${n === 1 ? "" : "s"} and ${Object.keys(data.p.buy || {}).length} game${Object.keys(data.p.buy || {}).length === 1 ? "" : "s"} on the buy list.
+      <p>${n} thing${n === 1 ? "" : "s"} on the schedule and ${Object.keys(data.p.buy || {}).length} game${Object.keys(data.p.buy || {}).length === 1 ? "" : "s"} on the buy list.
       ${isMe ? "<br><b>This will replace your own plan on this device.</b>" : ""}</p>
       <div class="row"><button class="btn" data-action="accept-plan">Import</button><button class="btn secondary" data-close>Not now</button></div>`);
     $("#sheet").dataset.pending = JSON.stringify(data);
@@ -643,6 +745,7 @@
   const cleanPlan = p => {
     const plan = Object.assign(emptyPlan(), p);
     plan.sessions = asList(p.sessions).filter(x => typeof x === "string");
+    plan.visits = asList(p.visits).filter(v => isObj(v) && ["id", "game", "day", "start", "end"].every(k => typeof v[k] === "string"));
     plan.buy = isObj(p.buy) ? p.buy : {};
     plan.notes = isObj(p.notes) ? p.notes : {};
     plan.updatedAt = +p.updatedAt || 0;
@@ -813,6 +916,37 @@
         touch(db.currentMember); render(); refreshSheet(); toast("Added to buy list");
         break;
       }
+      case "add-visit": {
+        const len = Number($("#visit-len").value), day = $("#visit-day").value;
+        const t = visitTimes(day, $("#visit-start").value, len);
+        if (!t) return;
+        const v = { id: uid("v"), game: gid, day, ...t };
+        plan.visits = (plan.visits || []).concat(v);
+        ui.day = day;
+        touch(db.currentMember); render(); refreshSheet();
+        toast(conflictsFor(db.currentMember, v).length ? "Added, but it clashes with something else" : `Added: ${dayLabel(day)} ${t.start}`);
+        break;
+      }
+      case "rm-visit":
+        plan.visits = (plan.visits || []).filter(v => v.id !== el.dataset.visit);
+        touch(db.currentMember); render(); refreshSheet(); toast("Visit removed");
+        break;
+      case "fix-clashes": {
+        // Latest first: move each clashing visit to the first free time after where it was, else the first free time that day
+        let moved = 0, stuck = 0;
+        planItems(db.currentMember, ui.day).filter(x => x.kind === "visit").reverse().forEach(x => {
+          if (!conflictsFor(db.currentMember, x).length) return;
+          const len = mins(x.end) - mins(x.start);
+          x.v.day = "";  // take it off the day while looking for room
+          const t = nextFreeStart(db.currentMember, ui.day, len, mins(x.start)) ?? nextFreeStart(db.currentMember, ui.day, len);
+          x.v.day = ui.day;
+          if (t == null) { stuck++; return; }
+          x.v.start = fmt(t); x.v.end = fmt(t + len); moved++;
+        });
+        touch(db.currentMember); render();
+        toast(stuck ? `Moved ${moved}; no free time left for ${stuck}` : `Moved ${moved} visit${moved === 1 ? "" : "s"}`);
+        break;
+      }
       case "unbuy": delete plan.buy[gid]; touch(db.currentMember); render(); refreshSheet(); break;
       case "bought": plan.buy[gid].bought = !plan.buy[gid].bought; touch(db.currentMember); render(); refreshSheet(); break;
       case "prio": plan.buy[gid].prio = plan.buy[gid].prio === "must" ? "maybe" : "must"; touch(db.currentMember); render(); break;
@@ -831,7 +965,7 @@
         db.customGames = db.customGames.filter(x => x.id !== gid);
         if (!db.hiddenGames.includes(gid)) db.hiddenGames.push(gid);
         const sids = new Set((g.sessions || []).map(s => s.id));
-        MEMBERS.forEach(m => { const p = db.plans[m.id]; p.sessions = p.sessions.filter(s => !sids.has(s)); delete p.buy[gid]; });
+        MEMBERS.forEach(m => { const p = db.plans[m.id]; p.sessions = p.sessions.filter(s => !sids.has(s)); p.visits = (p.visits || []).filter(v => v.game !== gid); delete p.buy[gid]; });
         save(); closeSheet(); render(); toast("Game deleted");
         break;
       }
@@ -847,7 +981,7 @@
       case "accept-plan": {
         const data = JSON.parse($("#sheet").dataset.pending || "null");
         if (!data) return;
-        db.plans[data.m] = Object.assign(emptyPlan(), data.p);
+        db.plans[data.m] = cleanPlan(data.p);
         mergeGames(data.g, data.h);
         save(); delete $("#sheet").dataset.pending; closeSheet();
         ui.tab = "crew"; render(); toast(`${member(data.m).name}'s plan imported`);
@@ -867,7 +1001,7 @@
         db.customGames = db.customGames.filter(g => !ids.includes(g.id));
         invalidate();
         const valid = new Set(sessionIndex().keys());
-        MEMBERS.forEach(m => { const p = db.plans[m.id]; p.sessions = p.sessions.filter(s => valid.has(s)); ids.forEach(id => delete p.buy[id]); });
+        MEMBERS.forEach(m => { const p = db.plans[m.id]; p.sessions = p.sessions.filter(s => valid.has(s)); p.visits = (p.visits || []).filter(v => !ids.includes(v.game)); ids.forEach(id => delete p.buy[id]); });
         save(); render(); toast("Samples removed");
         break;
       }
@@ -897,6 +1031,18 @@
 
   document.addEventListener("change", e => {
     const t = e.target;
+    if (t.id === "visit-day" && ui.sheetGame) {
+      const n = nextFreeStart(db.currentMember, $("#visit-day").value, Number($("#visit-len").value));
+      if (n != null) $("#visit-start").value = fmt(n);
+    }
+    if (t.dataset.visitField) {
+      const v = (myPlan().visits || []).find(x => x.id === t.closest("[data-visit]").dataset.visit);
+      if (!v) return;
+      const row = t.closest("[data-visit]"), get = f => row.querySelector(`[data-visit-field="${f}"]`).value;
+      const times = visitTimes(get("day"), get("start"), Number(get("len")));
+      if (times) { Object.assign(v, { day: get("day") }, times); ui.day = v.day; touch(db.currentMember); render(); }
+      refreshSheet();
+    }
     if (t.id === "budget") { myPlan().budget = Math.max(0, Number(t.value) || 0); touch(db.currentMember); render(); }
     if ((t.id === "buy-price" || t.id === "buy-prio") && ui.sheetGame) {
       const b = myPlan().buy[ui.sheetGame];
@@ -917,6 +1063,52 @@
       }).catch(() => toast("That file isn't a SPIEL '26 backup"));
     }
   });
+
+  // ---------- Drag to move / resize booth visits on My day ----------
+  let drag = null;
+  document.addEventListener("pointerdown", e => {
+    const handle = e.target.closest("[data-drag]");
+    const block = handle && handle.closest(".pblock-visit");
+    if (!block || e.button > 0) return;
+    const v = (myPlan().visits || []).find(x => x.id === block.dataset.item);
+    if (!v) return;
+    e.preventDefault();
+    const plan = block.closest(".dayplan");
+    drag = { v, block, mode: handle.dataset.drag, y0: e.clientY + scrollY, start: mins(v.start), end: mins(v.end),
+      first: Number(plan.dataset.first), close: Number(plan.dataset.close),
+      open: mins((DAYS.find(d => d.date === v.day) || DAYS[0]).open), pointer: e.pointerId };
+    drag.next = { start: drag.start, end: drag.end };
+    block.classList.add("dragging");
+    try { handle.setPointerCapture(e.pointerId); } catch (_) {}
+  });
+  document.addEventListener("pointermove", e => {
+    if (!drag || e.pointerId !== drag.pointer) return;
+    e.preventDefault();
+    // Scroll the page when dragging near the top or bottom edge
+    if (e.clientY < 70) scrollBy(0, -12); else if (e.clientY > innerHeight - 90) scrollBy(0, 12);
+    const dm = Math.round((e.clientY + scrollY - drag.y0) / PX / 15) * 15;
+    const len = drag.end - drag.start;
+    if (drag.mode === "move") {
+      const st = Math.min(Math.max(drag.start + dm, drag.open), drag.close - len);
+      drag.next = { start: st, end: st + len };
+    } else drag.next = { start: drag.start, end: Math.min(Math.max(drag.end + dm, drag.start + 15), drag.close) };
+    const b = drag.block;
+    b.style.top = `${(drag.next.start - drag.first) * PX}px`;
+    b.style.height = `${Math.max(26, (drag.next.end - drag.next.start) * PX - 3)}px`;
+    b.querySelector(".block-time").textContent = `${fmt(drag.next.start)}–${fmt(drag.next.end)} · booth visit`;
+  }, { passive: false });
+  const endDrag = e => {
+    if (!drag || e.pointerId !== drag.pointer) return;
+    const d = drag; drag = null;
+    if (e.type === "pointerup" && (d.next.start !== d.start || d.next.end !== d.end)) {
+      d.v.start = fmt(d.next.start); d.v.end = fmt(d.next.end);
+      touch(db.currentMember);
+      toast(conflictsFor(db.currentMember, d.v).length ? `${fmt(d.next.start)}–${fmt(d.next.end)}: clashes with something` : `${fmt(d.next.start)}–${fmt(d.next.end)}`);
+    }
+    render();
+  };
+  document.addEventListener("pointerup", endDrag);
+  document.addEventListener("pointercancel", endDrag);
 
   document.addEventListener("submit", e => {
     if (e.target.id === "game-form") { e.preventDefault(); saveGameForm(e.target); }

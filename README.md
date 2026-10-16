@@ -3,9 +3,9 @@
 A small planner for our crew (Sjord, Annemieke, Bar and Naomi) at **SPIEL Essen 2026**
 (Messe Essen, Thu 22 – Sun 25 October 2026).
 
-- **My day**: a timeline of the demo sessions you've joined, day by day, with free gaps and clash warnings.
-- **Games**: every game we're tracking with publisher, hall/booth, players, play time, price, description, a link, and its session times. Tap a game to join a session, add it to your buy list, or write notes.
-- **Crew**: *Who's going where*: day by day, every session anyone has joined, with everyone's meeples and a 🤝 badge when you're going together. Updates live once crew sync is on.
+- **My day**: a time grid of your day: demo sessions you've joined (fixed times 🔒) and booth visits you've planned. Drag a visit by its ⠿ grip to move it, or by its bottom edge to change its length (15-minute steps, mouse or touch). Clashes are outlined in red, and **Fix clashes** moves overlapping visits to the next free time.
+- **Games**: every game we're tracking with publisher, hall/booth, players, play time, price, description, a link, and its session times. Tap a game to join a demo session, **plan a booth visit** (any game, no demo needed: pick a day, start and length; it suggests your next free slot), add it to your buy list, or write notes.
+- **Crew**: *Who's going where*: day by day, every demo session and booth visit anyone has planned, with everyone's meeples and a 🤝 badge when you're going together. Updates live once crew sync is on.
 - **Budget**: set your budget, mark games must-have or maybe, tick them off when bought, and see what's left.
 - **More**: switch player, share your plan, back up or restore, and install instructions.
 
@@ -31,7 +31,7 @@ No App Store or Xcode needed.
 | What | Where |
 | --- | --- |
 | Members, fair days, the shared game list | `data/spiel-data.js` (edit and push to `main` to update everyone) |
-| Your sessions, buy list, budget, notes, games added in the app | the phone's `localStorage`, mirrored to the crew's live database when crew sync is on |
+| Your sessions, booth visits, buy list, budget, notes, games added in the app | the phone's `localStorage`, mirrored to the crew's live database when crew sync is on |
 
 ## Live crew sync (Firebase, one-time setup, about 5 minutes)
 
@@ -103,7 +103,7 @@ The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
 
-`tests/e2e.js` drives the app in headless Chromium through 53 checks: player pick, search and filters,
+`tests/e2e.js` drives the app in headless Chromium through 86 checks: player pick, search and filters,
 join, leave and clashes, add, edit and delete, notes, budget maths, share-link import, backup and restore,
 offline mode, and layout from 320px to desktop.
 
