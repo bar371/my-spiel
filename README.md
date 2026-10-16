@@ -89,7 +89,7 @@ Add an entry to `games` in `data/spiel-data.js`:
 
 The shared list holds the BoardGameGeek SPIEL 2026 preview (boardgamegeek.com/geekpreviewv2/93; about 770 games
 with a hall or booth, with price and player count where the publisher gave them; listings without any hall or booth
-are left out as they're probably not at the fair; `bgg` is the BoardGameGeek id) plus 32 games compiled
+are left out as they're probably not at the fair; `bgg` is the BoardGameGeek id) plus 33 games compiled
 from preview articles (marked `preview: true`, each linking to its source).
 Demo times are unpublished, so add them with **Edit game** in the app (shared with the crew when sync is on) or in this file.
 
