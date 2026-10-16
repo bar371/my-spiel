@@ -254,6 +254,16 @@ label.field textarea { min-height: 80px; resize: vertical; }
 .crew-member h4 { margin: 0; font-family: var(--font-head); font-size: 1.05rem; }
 .crew-member p { margin: 2px 0 0; color: var(--ink-soft); font-size: .82rem; }
 .together { margin-top: 10px; }
+.going { display: grid; grid-template-columns: 52px 1fr; gap: 12px; align-items: start; }
+.going.together { box-shadow: 0 0 0 3px var(--ok), var(--shadow); }
+.going-time { text-align: center; background: var(--paper-2); border-radius: 12px; padding: 6px 0; font-family: var(--font-head); line-height: 1.1; }
+.going-time small { display: block; color: var(--ink-soft); font-size: .75rem; }
+.going .meta .small { color: var(--ink-soft); font-weight: 700; }
+.banner.live { background: #dff3e6; color: #1d5e37; }
+.sync { font-weight: 800; }
+.sync.live { color: #7ee2a0; }
+.sync.error { color: #ffb4a8; }
+code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-size: .85em; word-break: break-all; }
 
 /* ---------- Budget ---------- */
 .budget-head { text-align: center; }

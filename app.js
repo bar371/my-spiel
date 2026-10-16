@@ -7,6 +7,11 @@
  *     customGames[]            games added or edited in the app (override seed by id)
  *     hiddenGames[]            seed game ids removed in the app
  *     plans{memberId}          { sessions[], buy{gameId:{price,prio,bought}}, budget, notes{}, updatedAt }
+ *     crewCode                 shared crew id for live sync (see data/sync-config.js)
+ *
+ * Live sync: with a crew code set, every phone mirrors the crew's plans, added
+ * games and deleted games through Firebase Realtime Database (REST + event stream).
+ * Newest updatedAt wins; each phone only pushes what it changed itself.
  */
 (() => {
   "use strict";
@@ -47,6 +52,7 @@
     invalidate();
     try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); }
     catch (_) { toast("Couldn't save on this device (private browsing?)"); }
+    schedulePush();
   }
   function touch(memberId) { db.plans[memberId].updatedAt = Date.now(); save(); }
 
@@ -59,7 +65,7 @@
     const list = SEED.games
       .filter(g => !db.hiddenGames.includes(g.id))
       .map(g => custom.get(g.id) || g);
-    db.customGames.forEach(g => { if (!SEED.games.some(s => s.id === g.id)) list.push(g); });
+    db.customGames.forEach(g => { if (!SEED.games.some(s => s.id === g.id) && !db.hiddenGames.includes(g.id)) list.push(g); });
     return (gamesCache = list.sort((a, b) => a.name.localeCompare(b.name)));
   }
   function sessionIndex() {
@@ -142,17 +148,20 @@
       const n = DAYS.findIndex(d => d.date === today) + 1;
       txt = n > 0 ? `Day ${n} of ${DAYS.length} · have fun!` : "SPIEL is on!";
     } else txt = "See you next year!";
-    $("#countdown").textContent = txt;
+    const st = { live: "● live", connecting: "○ syncing…", offline: "○ offline", error: "⚠ sync problem" }[sync.state];
+    $("#countdown").innerHTML = esc(txt) + (st ? ` · <span class="sync ${sync.state}">${st}</span>` : "");
   }
 
   function renderDays() {
     const nav = $("#days");
-    nav.hidden = ui.tab !== "schedule";
+    nav.hidden = ui.tab !== "schedule" && ui.tab !== "crew";
     if (nav.hidden || !me()) return;
     const idx = sessionIndex();
+    const crew = ui.tab === "crew";
+    const ids = crew ? new Set(MEMBERS.flatMap(m => db.plans[m.id].sessions)) : new Set(myPlan().sessions);
     nav.style.setProperty("--day-count", DAYS.length);
     nav.innerHTML = DAYS.map(d => {
-      const n = myPlan().sessions.filter(id => idx.get(id)?.s.day === d.date).length;
+      const n = [...ids].filter(id => idx.get(id)?.s.day === d.date).length;
       return `<button class="day ${ui.day === d.date ? "active" : ""}" data-day="${d.date}">
         <b>${d.label}</b><small>${Number(d.date.slice(8))} Oct</small><br><span class="count">${n}</span></button>`;
     }).join("");
@@ -241,6 +250,7 @@
 
   function viewCrew() {
     const idx = sessionIndex();
+    const day = DAYS.find(d => d.date === ui.day) || DAYS[0];
     const cards = MEMBERS.map(m => {
       const p = db.plans[m.id];
       const n = p.sessions.filter(id => idx.has(id)).length;
@@ -249,23 +259,33 @@
       return `<div class="card crew-member">${meeple(m.color)}
         <div><h4>${esc(m.name)}${m.id === db.currentMember ? " <span class='pill gold'>you</span>" : ""}</h4>
         <p>${n} session${n === 1 ? "" : "s"} · ${eur.format(spend)} on the buy list · ${esc(when)}</p></div>
-        ${m.id === db.currentMember ? `<button class="btn small" data-action="share">Share</button>` : ""}</div>`;
+        ${m.id === db.currentMember && !crewBase() ? `<button class="btn small" data-action="share">Share</button>` : ""}</div>`;
     }).join("");
 
-    // Sessions two or more of us are joining
-    const shared = [...idx.values()]
+    // Every session anyone in the crew has joined on the selected day
+    const going = [...idx.values()]
+      .filter(x => x.s.day === day.date)
       .map(x => ({ ...x, who: whoJoins(x.s.id) }))
-      .filter(x => x.who.length > 1)
-      .sort((a, b) => a.s.day.localeCompare(b.s.day) || mins(a.s.start) - mins(b.s.start));
+      .filter(x => x.who.length)
+      .sort((a, b) => mins(a.s.start) - mins(b.s.start) || a.g.name.localeCompare(b.g.name));
 
-    return `<h2 class="section-title">👥 The crew</h2>
-      <div class="crew-grid">${cards}</div>
-      <div class="banner">Each phone keeps its own plans. Tap <b>Share</b> to send your plan as a link; when a friend opens it, your picks show up on their crew page.</div>
-      <h2 class="section-title">🤝 Playing together</h2>
-      ${shared.length ? shared.map(({ s, g, who }) => `<article class="card tap" data-action="open" data-game="${esc(g.id)}">
-          ${meeples(who)}<h3 class="game-name">${esc(g.name)}</h3>
-          <div class="meta"><span class="pill">${esc(dayLabel(s.day))} · ${esc(s.start)}–${esc(s.end)}</span>${hallPill(g)}</div></article>`).join("")
-        : `<div class="empty"><span class="big">🤝</span><b>No shared sessions yet</b><p>Sessions that two or more of you join show up here.</p></div>`}`;
+    const banner = crewBase()
+      ? `<div class="banner live">${sync.state === "live" ? "🟢 <b>Live.</b> Everyone's picks update here automatically." : "○ Connecting to the crew… changes are saved and will sync."}</div>`
+      : `<div class="banner">Plans aren't syncing yet. ${SYNC_URL ? "Turn on <b>live crew sync</b> under <b>More</b> so everyone sees each other's picks automatically." : "Until live sync is set up, tap <b>Share</b> to send your plan as a link."}</div>`;
+
+    return `<h2 class="section-title">🗺️ Who's going where · ${esc(dayLabel(day.date))}</h2>
+      ${banner}
+      ${going.length ? going.map(({ s, g, who }) => `<article class="card tap going ${who.length > 1 ? "together" : ""}" data-action="open" data-game="${esc(g.id)}">
+          <div class="going-time"><b>${esc(s.start)}</b><small>${esc(s.end)}</small></div>
+          <div><h3 class="game-name">${esc(g.name)}</h3>
+            <div class="meta">${meeples(who)}<span class="small">${esc(who.map(m => m.name).join(", "))}</span></div>
+            <div class="meta">${hallPill(g)}${s.location ? `<span class="pill">📍 ${esc(s.location)}</span>` : ""}
+              ${who.length > 1 ? `<span class="pill ok">🤝 together</span>` : ""}
+              ${who.some(m => m.id === db.currentMember) ? `<span class="pill gold">you're in</span>` : ""}</div></div>
+        </article>`).join("")
+        : `<div class="empty"><span class="big">🗺️</span><b>Nobody has joined a session on ${esc(day.label)} yet</b><p>Sessions anyone in the crew joins show up here with their meeples.</p></div>`}
+      <h2 class="section-title">👥 The crew</h2>
+      <div class="crew-grid">${cards}</div>`;
   }
 
   function viewBudget() {
@@ -308,6 +328,7 @@
       <div class="card"><h3 class="game-name">Player</h3>
         <p class="muted small">This device is set to <b>${esc(me().name)}</b>.</p>
         <button class="btn secondary" data-action="who">Switch player</button></div>
+      ${syncCard()}
       <div class="card"><h3 class="game-name">Share &amp; back up</h3>
         <p class="muted small">Send your plan to the crew as a link, or save a backup file with everything on this device (all four plans and added games).</p>
         <div class="row"><button class="btn" data-action="share">Share my plan</button>
@@ -321,10 +342,26 @@
       <p class="muted small" style="color:var(--paper);opacity:.7;text-align:center;margin-top:18px">${esc(SEED.fair.name)} · ${esc(SEED.fair.venue)}</p>`;
   }
 
+  function syncCard() {
+    if (!SYNC_URL) return `<div class="card"><h3 class="game-name">Live crew sync</h3>
+      <p class="muted small">Not set up yet. Once a database is added in <code>data/sync-config.js</code> (see README), everyone sees each other's picks live.</p></div>`;
+    if (!crewBase()) return `<div class="card"><h3 class="game-name">Live crew sync</h3>
+      <p class="muted small">Share your plans live with the crew. One person starts a crew and sends the invite link; everyone else just opens it.</p>
+      <div class="row"><button class="btn" data-action="crew-new">Start a crew</button></div>
+      <form id="crew-join" class="row" style="margin-top:10px"><input class="inline" style="flex:1;width:auto" name="code" placeholder="or paste a crew code" autocomplete="off" autocapitalize="off">
+        <button class="btn secondary" type="submit">Join</button></form></div>`;
+    const st = { live: "🟢 Live", connecting: "○ Connecting…", offline: "○ Offline: changes will sync later", error: "⚠ Can't reach the database" }[sync.state] || "";
+    return `<div class="card"><h3 class="game-name">Live crew sync</h3>
+      <p class="muted small">${st}<br>Crew code: <code>${esc(db.crewCode)}</code></p>
+      <div class="row"><button class="btn" data-action="crew-invite">Invite the crew</button>
+        <button class="btn secondary small" data-action="crew-leave">Leave crew</button></div></div>`;
+  }
+
   // ---------- Sheets ----------
   function openSheet(html) {
     $("#sheet-body").innerHTML = html;
     $("#sheet").hidden = false;
+    ui.sheetGame = null;
     document.body.style.overflow = "hidden";
   }
   function closeSheet() {
@@ -342,7 +379,6 @@
 
   function gameSheet(id) {
     const g = gameById(id); if (!g) return closeSheet();
-    ui.sheetGame = id;
     const plan = myPlan();
     const buy = plan.buy[g.id];
     const sessions = [...(g.sessions || [])].sort((a, b) => a.day.localeCompare(b.day) || mins(a.start) - mins(b.start));
@@ -390,13 +426,14 @@
         : `<button class="btn block" data-action="buy" data-game="${esc(g.id)}">＋ Add to buy list${g.price ? ` (${eur.format(g.price)})` : ""}</button>`}
       </div>
 
-      <h3>📝 My notes</h3>
+      <h3>📝 My notes${crewBase() ? ` <small class="muted">(the crew can see these)</small>` : ""}</h3>
       <label class="field"><textarea id="note" placeholder="Rules questions, who to bring, promo to ask for…">${esc(plan.notes[g.id] || "")}</textarea></label>
 
       <div class="row spread" style="margin-top:14px">
         <button class="btn secondary" data-action="edit" data-game="${esc(g.id)}">✏️ Edit game</button>
         <button class="btn danger small" data-action="delete" data-game="${esc(g.id)}">Delete</button>
       </div>`);
+    ui.sheetGame = id;
   }
 
   function sessionRow(s) {
@@ -442,7 +479,7 @@
     const name = String(f.get("name")).trim();
     if (!name) return;
     let id = old ? old.id : slug(name);
-    if (!old && gameById(id)) id = uid(id);
+    if (!old && (gameById(id) || db.hiddenGames.includes(id))) id = uid(id);
     const sessions = [...form.querySelectorAll(".sess-edit")].map(row => {
       const v = n => row.querySelector(`[name=${n}]`).value.trim();
       return { id: row.dataset.sid, day: v("day"), start: v("start"), end: v("end"), location: v("location"), note: v("note") };
@@ -519,6 +556,168 @@
     return true;
   }
 
+  // ---------- Live crew sync (Firebase Realtime Database over REST) ----------
+  const SYNC_URL = String((window.SPIEL_SYNC || {}).databaseURL || "").trim().replace(/\/+$/, "");
+  const CREW_RE = /^[A-Za-z0-9_-]{10,40}$/;  // must match the database rules (length >= 10)
+  const KEY_RE = /^[A-Za-z0-9_-]{1,120}$/;  // safe Firebase keys
+  const sync = { state: "off", remote: null, es: null, inflight: new Set(), again: false, pushTimer: null, retryTimer: null, pendingRender: false };
+  const crewBase = () => SYNC_URL && CREW_RE.test(db.crewCode || "") ? `${SYNC_URL}/crews/${db.crewCode}` : null;
+  const isObj = v => v && typeof v === "object" && !Array.isArray(v);
+  const asList = v => Array.isArray(v) ? v.filter(x => x != null) : isObj(v) ? Object.values(v) : [];
+
+  function setSyncState(st) {
+    if (sync.state === st) return;
+    sync.state = st;
+    renderHeader();
+    if (ui.tab === "crew" || ui.tab === "settings") softRender();
+  }
+
+  function connectSync() {
+    if (sync.es) { sync.es.close(); sync.es = null; }
+    sync.remote = null;
+    const base = crewBase();
+    if (!base) return setSyncState("off");
+    if (!("EventSource" in window)) return setSyncState("error");
+    setSyncState("connecting");
+    const es = new EventSource(`${base}.json`);
+    sync.es = es;
+    const onEvent = e => {
+      let msg; try { msg = JSON.parse(e.data); } catch (_) { return; }
+      if (!msg || typeof msg.path !== "string") return;
+      const parts = msg.path.split("/").filter(Boolean);
+      if (e.type === "patch") Object.entries(isObj(msg.data) ? msg.data : {}).forEach(([k, v]) => setRemote(parts.concat(k.split("/").filter(Boolean)), v));
+      else setRemote(parts, msg.data);
+      setSyncState("live");
+      reconcile();
+    };
+    es.addEventListener("put", onEvent);
+    es.addEventListener("patch", onEvent);
+    es.addEventListener("cancel", () => setSyncState("error"));
+    es.onerror = () => { if (sync.es === es) setSyncState(navigator.onLine === false ? "offline" : "connecting"); };
+  }
+
+  function setRemote(parts, value) {
+    if (!parts.length) { sync.remote = isObj(value) ? value : {}; return; }
+    if (!isObj(sync.remote)) sync.remote = {};
+    let node = sync.remote;
+    parts.slice(0, -1).forEach(k => { if (!isObj(node[k])) node[k] = {}; node = node[k]; });
+    const leaf = parts[parts.length - 1];
+    if (value === null || value === undefined) delete node[leaf]; else node[leaf] = value;
+  }
+
+  const cleanPlan = p => {
+    const plan = Object.assign(emptyPlan(), p);
+    plan.sessions = asList(p.sessions).filter(x => typeof x === "string");
+    plan.buy = isObj(p.buy) ? p.buy : {};
+    plan.notes = isObj(p.notes) ? p.notes : {};
+    plan.updatedAt = +p.updatedAt || 0;
+    return plan;
+  };
+  const cleanGame = g => Object.assign({}, g, {
+    sessions: asList(g.sessions).filter(x => isObj(x) && typeof x.id === "string" && typeof x.day === "string" && typeof x.start === "string" && typeof x.end === "string")
+  });
+
+  // Take whatever is newer on the server, then push whatever is newer here.
+  function reconcile() {
+    const r = isObj(sync.remote) ? sync.remote : {};
+    let changed = false;
+    const rp = isObj(r.plans) ? r.plans : {};
+    MEMBERS.forEach(m => {
+      const rem = rp[m.id];
+      if (isObj(rem) && (+rem.updatedAt || 0) > (db.plans[m.id].updatedAt || 0)) { db.plans[m.id] = cleanPlan(rem); changed = true; }
+    });
+    Object.keys(isObj(r.hidden) ? r.hidden : {}).forEach(id => {
+      if (r.hidden[id] && !db.hiddenGames.includes(id)) { db.hiddenGames.push(id); changed = true; }
+    });
+    Object.values(isObj(r.games) ? r.games : {}).forEach(g => {
+      if (!isObj(g) || typeof g.id !== "string" || typeof g.name !== "string" || db.hiddenGames.includes(g.id)) return;
+      const cur = db.customGames.find(x => x.id === g.id);
+      if (!cur || (+g.updatedAt || 0) > (+cur.updatedAt || 0)) { db.customGames = db.customGames.filter(x => x.id !== g.id).concat(cleanGame(g)); changed = true; }
+    });
+    const n = db.customGames.length;
+    db.customGames = db.customGames.filter(g => !db.hiddenGames.includes(g.id));
+    if (db.customGames.length !== n) changed = true;
+    if (changed) { save(); softRender(); }
+    pushChanges();
+  }
+
+  function schedulePush() { clearTimeout(sync.pushTimer); sync.pushTimer = setTimeout(pushChanges, 300); }
+
+  function pushChanges() {
+    // Only after the first snapshot arrived, so an old phone never overwrites newer data
+    if (!crewBase() || !isObj(sync.remote)) return;
+    const r = sync.remote, rp = isObj(r.plans) ? r.plans : {}, rg = isObj(r.games) ? r.games : {}, rh = isObj(r.hidden) ? r.hidden : {};
+    MEMBERS.forEach(m => {
+      const local = db.plans[m.id];
+      if ((local.updatedAt || 0) > (+(rp[m.id] || {}).updatedAt || 0)) put(`plans/${m.id}`, local);
+    });
+    db.customGames.forEach(g => {
+      if (KEY_RE.test(g.id) && (!rg[g.id] || (+g.updatedAt || 0) > (+rg[g.id].updatedAt || 0))) put(`games/${g.id}`, g);
+    });
+    db.hiddenGames.forEach(id => { if (KEY_RE.test(id) && !rh[id]) put(`hidden/${id}`, true); });
+  }
+
+  function put(path, value) {
+    if (sync.inflight.has(path)) { sync.again = true; return; }
+    const base = crewBase();
+    sync.inflight.add(path);
+    const body = JSON.stringify(value);
+    fetch(`${base}/${path}.json`, { method: "PUT", body })
+      .then(res => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (crewBase() === base) setRemote(path.split("/"), JSON.parse(body));
+      })
+      .catch(() => {
+        setSyncState(navigator.onLine === false ? "offline" : "error");
+        clearTimeout(sync.retryTimer); sync.retryTimer = setTimeout(pushChanges, 15000);
+      })
+      .finally(() => { sync.inflight.delete(path); if (sync.again) { sync.again = false; schedulePush(); } });
+  }
+
+  function joinCrew(code) {
+    code = String(code || "").trim();
+    if (!SYNC_URL) { toast("Live sync isn't set up in this app yet"); return false; }
+    if (!CREW_RE.test(code)) { toast("That crew code doesn't look right"); return false; }
+    db.crewCode = code; save(); connectSync();
+    return true;
+  }
+  const newCrewCode = () => Array.from(crypto.getRandomValues(new Uint8Array(12)), b => "abcdefghjkmnpqrstuvwxyz23456789"[b % 31]).join("");
+  const crewInviteUrl = () => `${location.origin}${location.pathname}#crew=${db.crewCode}`;
+
+  async function inviteCrew() {
+    const url = crewInviteUrl();
+    try {
+      if (navigator.share) { await navigator.share({ title: "Join our SPIEL '26 crew", url }); return; }
+      await navigator.clipboard.writeText(url);
+      toast("Invite link copied");
+    } catch (e) {
+      if (e && e.name === "AbortError") return;
+      openSheet(`<h2>Invite link</h2><p class="muted">Send this link to the crew:</p><label class="field"><textarea readonly>${esc(url)}</textarea></label>`);
+    }
+  }
+
+  function checkIncomingCrew() {
+    const m = location.hash.match(/^#crew=([A-Za-z0-9_-]+)/);
+    if (!m) return false;
+    history.replaceState(null, "", location.pathname + location.search);
+    if (db.crewCode === m[1]) return true;
+    if (joinCrew(m[1])) { toast("Joined the crew: live sync is on"); render(); }
+    return true;
+  }
+
+  // Re-render for remote changes without stealing focus from something being typed
+  function softRender() {
+    const a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && a.closest("#view, #sheet")) { sync.pendingRender = true; return; }
+    render();
+    if (ui.sheetGame && !$("#sheet").hidden) gameSheet(ui.sheetGame);
+  }
+  document.addEventListener("focusout", () => setTimeout(() => {
+    if (sync.pendingRender && !(document.activeElement && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName))) { sync.pendingRender = false; softRender(); }
+  }, 0));
+  window.addEventListener("online", () => { if (crewBase() && (!sync.es || sync.es.readyState === 2)) connectSync(); else pushChanges(); });
+  window.addEventListener("offline", () => { if (crewBase()) setSyncState("offline"); });
+
   // ---------- Render ----------
   function render() {
     renderHeader();
@@ -587,15 +786,23 @@
       case "rm-session": el.closest(".sess-edit").remove(); break;
       case "delete": {
         const g = gameById(gid);
-        if (!confirm(`Delete “${g.name}” from this device?`)) return;
+        if (!confirm(`Delete “${g.name}”${crewBase() ? " for the whole crew" : " from this device"}?`)) return;
         db.customGames = db.customGames.filter(x => x.id !== gid);
-        if (SEED.games.some(s => s.id === gid)) db.hiddenGames.push(gid);
+        if (!db.hiddenGames.includes(gid)) db.hiddenGames.push(gid);
         const sids = new Set((g.sessions || []).map(s => s.id));
         MEMBERS.forEach(m => { const p = db.plans[m.id]; p.sessions = p.sessions.filter(s => !sids.has(s)); delete p.buy[gid]; });
         save(); closeSheet(); render(); toast("Game deleted");
         break;
       }
       case "share": sharePlan(); break;
+      case "crew-new":
+        if (joinCrew(newCrewCode())) { render(); inviteCrew(); }
+        break;
+      case "crew-invite": inviteCrew(); break;
+      case "crew-leave":
+        if (!confirm("Stop syncing with the crew on this device? Your plans stay saved here.")) return;
+        db.crewCode = ""; save(); connectSync(); render();
+        break;
       case "accept-plan": {
         const data = JSON.parse($("#sheet").dataset.pending || "null");
         if (!data) return;
@@ -626,7 +833,7 @@
       case "reset":
         if (!confirm("Erase every plan and added game on this device?")) return;
         try { localStorage.removeItem(STORE_KEY); } catch (_) {}
-        db = load(); invalidate(); render(); pickPlayerSheet(true);
+        db = load(); invalidate(); connectSync(); render(); pickPlayerSheet(true);
         break;
     }
   });
@@ -663,7 +870,8 @@
         if (!confirm("Replace everything on this device with this backup?")) return;
         const keepMe = db.currentMember;
         localStorage.setItem(STORE_KEY, JSON.stringify(data.db));
-        db = load(); db.currentMember = keepMe || db.currentMember; save();
+        const keepCrew = db.crewCode;
+        db = load(); db.currentMember = keepMe || db.currentMember; db.crewCode = keepCrew || db.crewCode; save(); connectSync();
         render(); toast("Backup restored");
       }).catch(() => toast("That file isn't a SPIEL '26 backup"));
     }
@@ -671,15 +879,23 @@
 
   document.addEventListener("submit", e => {
     if (e.target.id === "game-form") { e.preventDefault(); saveGameForm(e.target); }
+    if (e.target.id === "crew-join") {
+      e.preventDefault();
+      const code = new FormData(e.target).get("code");
+      const m = String(code || "").match(/#crew=([A-Za-z0-9_-]+)/);  // a pasted invite link works too
+      if (joinCrew(m ? m[1] : code)) { toast("Joined the crew: live sync is on"); render(); }
+    }
   });
 
   document.addEventListener("keydown", e => {
     if (e.key === "Escape" && !$("#sheet").hidden && !$("#sheet").dataset.locked) closeSheet();
   });
 
-  window.addEventListener("hashchange", checkIncomingPlan);
+  window.addEventListener("hashchange", () => { checkIncomingCrew() || checkIncomingPlan(); });
 
   // ---------- Boot ----------
+  checkIncomingCrew();
+  connectSync();
   render();
   if (!me()) pickPlayerSheet(true);
   else checkIncomingPlan();

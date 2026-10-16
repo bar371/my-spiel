@@ -27,6 +27,7 @@ jobs:
         run: |
           node --check app.js
           node --check sw.js
+          node --check data/sync-config.js
           node -e "global.window={}; require('./data/spiel-data.js'); const s=window.SPIEL_SEED; if(!s||!s.members||!s.games) throw new Error('bad seed data'); console.log(s.games.length+' games, '+s.members.length+' members')"
 
       - name: Build site

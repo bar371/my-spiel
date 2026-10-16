@@ -2,7 +2,7 @@
 // Bump CACHE whenever the app shell changes (the deploy workflow does this automatically).
 const CACHE = "spiel26-__BUILD__";
 const SHELL = [
-  "./", "index.html", "styles.css", "app.js", "data/spiel-data.js",
+  "./", "index.html", "styles.css", "app.js", "data/spiel-data.js", "data/sync-config.js",
   "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/apple-touch-icon.png"
 ];
 
@@ -21,6 +21,7 @@ self.addEventListener("activate", e => {
 // Network first (so new data shows up when online), cache as fallback.
 self.addEventListener("fetch", e => {
   if (e.request.method !== "GET") return;
+  if (e.request.headers.get("accept") === "text/event-stream" || /firebase(io\.com|database\.app)/.test(e.request.url)) return;
   e.respondWith(
     fetch(e.request)
       .then(res => {
