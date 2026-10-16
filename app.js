@@ -15,6 +15,8 @@
   const STORE_KEY = "spiel26:v1";
   const DAYS = SEED.fair.days;
   const MEMBERS = SEED.members;
+  // Renamed member ids (old → new), so plans and share links made under the old id carry over
+  const RENAMED = { annemike: "annemieke" };
   const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
 
   // ---------- Persistence ----------
@@ -28,7 +30,16 @@
     db.customGames = Array.isArray(db.customGames) ? db.customGames : [];
     db.hiddenGames = Array.isArray(db.hiddenGames) ? db.hiddenGames : [];
     db.plans = db.plans || {};
+    let migrated = false;
+    Object.entries(RENAMED).forEach(([from, to]) => {
+      if (!(from in db.plans) && db.currentMember !== from) return;
+      if (db.plans[from] && !db.plans[to]) db.plans[to] = db.plans[from];
+      delete db.plans[from];
+      if (db.currentMember === from) db.currentMember = to;
+      migrated = true;
+    });
     MEMBERS.forEach(m => { db.plans[m.id] = Object.assign(emptyPlan(), db.plans[m.id]); });
+    if (migrated) try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (_) {}
     return db;
   }
   let db = load();
@@ -475,6 +486,7 @@
     history.replaceState(null, "", location.pathname + location.search);
     let data;
     try { data = JSON.parse(b64d(m[1])); } catch (_) { toast("That share link looks broken"); return false; }
+    if (RENAMED[data.m]) data.m = RENAMED[data.m];
     const who = member(data.m);
     if (!who || !data.p) { toast("That share link looks broken"); return false; }
     const n = (data.p.sessions || []).length;

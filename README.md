@@ -1,6 +1,6 @@
 # SPIEL '26 Planner 🎲
 
-A small planner for our crew (Sjord, Annemike, Bar and Naomi) at **SPIEL Essen 2026**
+A small planner for our crew (Sjord, Annemieke, Bar and Naomi) at **SPIEL Essen 2026**
 (Messe Essen, Thu 22 – Sun 25 October 2026).
 
 - **My day**: a timeline of the demo sessions you've joined, day by day, with free gaps and clash warnings.
