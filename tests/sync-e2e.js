@@ -70,6 +70,16 @@ const norm = s => s.replace(/ /g, " ");
   ok(await until(async () => (await crewText(B, "2026-10-23")).includes("Bar, Naomi")), "Naomi sees Bar join her game");
   await A.click(".sheet-x").catch(() => {});
 
+  console.log("Booth visits");
+  await tab(B, "games"); await B.click('[data-game="sky-team"]');
+  await B.selectOption("#visit-day", "2026-10-24"); await B.fill("#visit-start", "13:00"); await B.selectOption("#visit-len", "30");
+  await B.click('[data-action="add-visit"]'); await B.click(".sheet-x");
+  ok(await until(async () => { const t = await crewText(A, "2026-10-24"); return t.includes("Sky Team") && t.includes("booth visit") && t.includes("13:00"); }), "Bar sees Naomi's booth visit on Sat");
+  await tab(B, "schedule"); await B.click('[data-day="2026-10-24"]');
+  const g = await B.locator(".pblock-visit .grip").boundingBox();
+  await B.mouse.move(g.x + 10, g.y + 10); await B.mouse.down(); await B.mouse.move(g.x + 10, g.y + 10 + 48, { steps: 5 }); await B.mouse.up();
+  ok(await until(async () => (await crewText(A, "2026-10-24")).includes("13:30")), "a dragged visit syncs its new time");
+
   console.log("Typing isn't interrupted by remote updates");
   await tab(A, "games"); await A.fill("#search", "casc");
   await tab(B, "games"); await B.click('[data-game="heat"]'); await B.click('[data-session="heat-1"]'); await B.click(".sheet-x");
