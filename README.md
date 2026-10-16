@@ -59,3 +59,15 @@ Add an entry to `games` in `data/spiel-data.js`:
 
 The four `sample: true` games are placeholders (booths and times are made up).
 Delete them from the file, or tap **More → Remove sample games** in the app.
+
+## Testing
+
+`tests/e2e.js` drives the app in headless Chromium through 53 checks: player pick, search and filters,
+join, leave and clashes, add, edit and delete, notes, budget maths, share-link import, backup and restore,
+offline mode, and layout from 320px to desktop.
+
+```sh
+python3 -m http.server 8765 &
+npm i --no-save playwright-core
+node tests/e2e.js
+```
