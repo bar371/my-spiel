@@ -9,5 +9,5 @@
  * each phone and travels in the invite link.
  */
 window.SPIEL_SYNC = {
-  databaseURL: ""
+  databaseURL: "https://my-spiel-26-default-rtdb.europe-west1.firebasedatabase.app"
 };
