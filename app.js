@@ -222,7 +222,7 @@
       <button class="btn" data-action="new">＋ Add</button></div>
       <div class="row" style="margin-bottom:12px">${chips}</div>
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
-      ${nPreview && !ui.query ? `<div class="banner">📰 ${nPreview} hyped SPIEL 2026 games from preview articles. Booths and demo times mostly aren't published yet, so add them with <b>Edit game</b> once you know them.</div>` : ""}
+      ${nPreview && !ui.query ? `<div class="banner">📰 ${games().length} SPIEL 2026 games from BoardGameGeek's SPIEL preview and preview articles (the ${nPreview} hyped picks from articles are marked <b>preview</b>). Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
       <p class="muted small" style="color:var(--paper);opacity:.8;margin:0 4px 8px">${list.length} game${list.length === 1 ? "" : "s"}</p>
       ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
       ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}`;
