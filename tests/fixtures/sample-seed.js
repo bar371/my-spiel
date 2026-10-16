@@ -28,12 +28,15 @@ window.SPIEL_SEED = {
     { id: "naomi",    name: "Naomi",    color: "#3f9c5a" }
   ],
 
+  tags: ["Engine building", "Drafting", "Tile laying", "Co-op", "Dice", "Puzzle", "Card game", "2 players", "6+ players", "Long (2h+)"],
+
   // Sample games so the app isn't empty on first launch. Booths and session
   // times are placeholders: replace them with real ones once the hall plan
   // is out, or delete them from the Settings tab.
   games: [
     {
       id: "cascadia",
+      tags: ["Drafting", "Tile laying", "Puzzle"],
       sample: true,
       name: "Cascadia",
       publisher: "Flatout Games / AEG",
@@ -52,6 +55,7 @@ window.SPIEL_SEED = {
     },
     {
       id: "ark-nova",
+      tags: ["Engine building", "Card game", "Long (2h+)"],
       sample: true,
       name: "Ark Nova",
       publisher: "Feuerland Spiele",
@@ -70,6 +74,7 @@ window.SPIEL_SEED = {
     },
     {
       id: "heat",
+      tags: ["Card game", "6+ players"],
       sample: true,
       name: "Heat: Pedal to the Metal",
       publisher: "Days of Wonder",
@@ -88,6 +93,7 @@ window.SPIEL_SEED = {
     },
     {
       id: "sky-team",
+      tags: ["Co-op", "Dice", "2 players"],
       sample: true,
       name: "Sky Team",
       publisher: "Le Scorpion Masqué",

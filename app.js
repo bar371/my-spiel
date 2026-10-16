@@ -68,6 +68,17 @@
     db.customGames.forEach(g => { if (!SEED.games.some(s => s.id === g.id) && !db.hiddenGames.includes(g.id)) list.push(g); });
     return (gamesCache = list.sort((a, b) => a.name.localeCompare(b.name)));
   }
+  const tagsOf = g => Array.isArray(g.tags) ? g.tags : [];
+  // Tags in the order the seed lists them (SEED.tags), then any custom ones A–Z
+  let tagsCache = null;
+  function allTags() {
+    if (tagsCache && tagsCache.list === gamesCache) return tagsCache.tags;
+    const seen = new Set(); games().forEach(g => tagsOf(g).forEach(t => seen.add(t)));
+    const order = Array.isArray(SEED.tags) ? SEED.tags : [];
+    const tags = [...order.filter(t => seen.has(t)), ...[...seen].filter(t => !order.includes(t)).sort((a, b) => a.localeCompare(b))];
+    tagsCache = { list: gamesCache, tags };
+    return tags;
+  }
   function sessionIndex() {
     if (indexCache) return indexCache;
     const idx = new Map();
@@ -125,12 +136,14 @@
     day: DAYS.some(d => d.date === today) ? today : DAYS[0].date,
     query: "",
     filter: "all",
+    tags: [],
     limit: PAGE,
     sheetGame: null
   };
   try { Object.assign(ui, JSON.parse(sessionStorage.getItem("spiel26:ui") || "{}"), { sheetGame: null }); } catch (_) {}
   if (!DAYS.some(d => d.date === ui.day)) ui.day = DAYS[0].date;
-  const keepUi = () => { try { sessionStorage.setItem("spiel26:ui", JSON.stringify({ tab: ui.tab, day: ui.day, filter: ui.filter })); } catch (_) {} };
+  if (!Array.isArray(ui.tags)) ui.tags = [];
+  const keepUi = () => { try { sessionStorage.setItem("spiel26:ui", JSON.stringify({ tab: ui.tab, day: ui.day, filter: ui.filter, tags: ui.tags })); } catch (_) {} };
 
   // ---------- Header ----------
   function renderHeader() {
@@ -203,14 +216,24 @@
     return html + `<div class="board"><div class="timeline">${parts.join("")}</div></div>`;
   }
   const fmt = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-  const hallPill = g => (g.hall || g.booth) ? `<span class="pill">🏛 ${[g.hall && `Hall ${g.hall}`, g.booth].filter(Boolean).map(esc).join(" · ")}</span>` : "";
+  // "Hall 6 · F300" rather than "Hall 6 · 6-F300"
+  const hallText = g => [g.hall && `Hall ${g.hall}`, g.hall && g.booth && g.booth.startsWith(`${g.hall}-`) ? g.booth.slice(String(g.hall).length + 1) : g.booth].filter(Boolean).join(" · ");
+  const hallPill = g => (g.hall || g.booth) ? `<span class="pill">🏛 ${esc(hallText(g))}</span>` : "";
 
   function viewGames() {
     const plan = myPlan();
     const q = ui.query.trim().toLowerCase();
-    let list = games().filter(g => !q || [g.name, g.publisher, g.description].join(" ").toLowerCase().includes(q));
+    let list = games().filter(g => !q || [g.name, g.publisher, g.description, ...tagsOf(g)].join(" ").toLowerCase().includes(q));
     if (ui.filter === "joining") list = list.filter(g => (g.sessions || []).some(s => plan.sessions.includes(s.id)));
     if (ui.filter === "buy") list = list.filter(g => plan.buy[g.id]);
+    // Tags narrow the list: a game must have every selected tag
+    list = list.filter(g => ui.tags.every(t => tagsOf(g).includes(t)));
+    const tagCounts = new Map();
+    list.forEach(g => tagsOf(g).forEach(t => tagCounts.set(t, (tagCounts.get(t) || 0) + 1)));
+    const tagChips = [...ui.tags, ...allTags().filter(t => tagCounts.has(t) && !ui.tags.includes(t))]
+      .map(t => { const on = ui.tags.includes(t);
+        return `<button class="btn small tag-chip ${on ? "" : "secondary"}" data-action="tag" data-tag="${esc(t)}" aria-pressed="${on}">${esc(t)}${on ? "" : ` <span class="count">${tagCounts.get(t) || 0}</span>`}</button>`; })
+      .join("");
     const anySample = games().some(g => g.sample);
     const nPreview = games().filter(g => g.preview).length;
 
@@ -220,9 +243,10 @@
     return `<h2 class="section-title">🎲 Games at SPIEL</h2>
       <div class="toolbar"><input class="search" id="search" type="search" placeholder="Search games, publishers…" value="${esc(ui.query)}" autocomplete="off">
       <button class="btn" data-action="new">＋ Add</button></div>
-      <div class="row" style="margin-bottom:12px">${chips}</div>
+      <div class="row" style="margin-bottom:8px">${chips}</div>
+      ${tagChips ? `<div class="tag-row" role="group" aria-label="Filter by game type">${ui.tags.length ? `<button class="btn small tag-chip clear" data-action="tags-clear">✕ Clear</button>` : `<span class="tag-label">🏷 Type</span>`}${tagChips}</div>` : ""}
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
-      ${nPreview && !ui.query ? `<div class="banner">📰 ${games().length} SPIEL 2026 games from BoardGameGeek's SPIEL preview and preview articles (the ${nPreview} hyped picks from articles are marked <b>preview</b>). Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
+      ${nPreview && !ui.query && !ui.tags.length ? `<div class="banner">📰 ${games().length} SPIEL 2026 games from BoardGameGeek's SPIEL preview and preview articles (the ${nPreview} hyped picks from articles are marked <b>preview</b>). Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
       <p class="muted small" style="color:var(--paper);opacity:.8;margin:0 4px 8px">${list.length} game${list.length === 1 ? "" : "s"}</p>
       ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
       ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}`;
@@ -239,6 +263,7 @@
         <h3 class="game-name" style="padding-right:${whoJoinsGame(g).length * 16 + 4}px">${esc(g.name)}</h3>
         ${g.publisher ? `<p class="muted small" style="margin:2px 0 0">${esc(g.publisher)}</p>` : ""}
         <p class="desc-short">${esc(g.description || "")}</p>
+        ${tagsOf(g).length ? `<div class="tags">${tagsOf(g).slice(0, 4).map(t => `<span class="pill tag${ui.tags.includes(t) ? " on" : ""}">${esc(t)}</span>`).join("")}${tagsOf(g).length > 4 ? `<span class="pill tag">+${tagsOf(g).length - 4}</span>` : ""}</div>` : ""}
         <div class="meta">
           ${g.sample ? `<span class="pill sample">sample</span>` : ""}
           ${g.preview ? `<span class="pill preview">preview</span>` : ""}
@@ -392,8 +417,9 @@
       ${g.publisher ? `<p class="publisher">${esc(g.publisher)}</p>` : ""}
       ${g.sample ? `<p><span class="pill sample">sample data: check booth &amp; times</span></p>` : ""}
       ${g.preview ? `<p><span class="pill preview">from preview articles: check details at the fair</span></p>` : ""}
+      ${tagsOf(g).length ? `<div class="tags">${tagsOf(g).map(t => `<span class="pill tag">${esc(t)}</span>`).join("")}</div>` : ""}
       <div class="facts">
-        <div class="fact"><small>Hall / booth</small><b>${g.hall || g.booth ? [g.hall, g.booth].filter(Boolean).map(esc).join(" · ") : "?"}</b></div>
+        <div class="fact"><small>Hall / booth</small><b>${g.hall || g.booth ? esc(hallText(g)) : "?"}</b></div>
         <div class="fact"><small>Players</small><b>${esc(g.players || "?")}</b></div>
         <div class="fact"><small>Play time</small><b>${esc(g.duration || "?")}</b></div>
         <div class="fact"><small>Fair price</small><b>${g.price ? eur.format(g.price) : "?"}</b></div>
@@ -472,6 +498,8 @@
           <label class="field">Link<input name="url" type="url" value="${esc(g.url || "")}" placeholder="https://boardgamegeek.com/…"></label>
         </div>
         <label class="field">Description<textarea name="description">${esc(g.description || "")}</textarea></label>
+        <label class="field">Tags <span class="muted small">(comma-separated, e.g. Engine building, Co-op)</span><input name="tags" value="${esc(tagsOf(g).join(", "))}" list="tag-options" autocomplete="off"></label>
+        <datalist id="tag-options">${allTags().map(t => `<option value="${esc(t)}">`).join("")}</datalist>
         <h3>🕒 Sessions</h3>
         <div id="sess-list">${(g.sessions || []).map(sessionRow).join("")}</div>
         <button type="button" class="btn small secondary" data-action="add-session">＋ Add session</button>
@@ -502,6 +530,7 @@
       price: priceRaw === "" ? null : Number(priceRaw),
       url: String(f.get("url")).trim(),
       description: String(f.get("description")).trim(),
+      tags: [...new Set(String(f.get("tags") || "").split(",").map(t => t.trim()).filter(Boolean))],
       sessions,
       updatedAt: Date.now()
     };
@@ -758,6 +787,12 @@
       case "who": pickPlayerSheet(false); break;
       case "open": gameSheet(gid); break;
       case "filter": ui.filter = el.dataset.filter; ui.limit = PAGE; render(); break;
+      case "tag": {
+        const t = el.dataset.tag;
+        ui.tags = ui.tags.includes(t) ? ui.tags.filter(x => x !== t) : [...ui.tags, t];
+        ui.limit = PAGE; render(); break;
+      }
+      case "tags-clear": ui.tags = []; ui.limit = PAGE; render(); break;
       case "more": ui.limit += PAGE * 2; render(); break;
       case "join": {
         const sid = el.dataset.session;

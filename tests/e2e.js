@@ -52,6 +52,25 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(await p.locator('.game-card').count() === 0, 'Joining filter empty');
   await p.click('[data-filter="all"]');
 
+  console.log('Games: type tags');
+  ok(await p.locator('.tag-row .tag-chip').count() === 10, 'tag chips listed');
+  ok((await text('.tag-row')).startsWith('🏷 Type\nEngine building'), 'tag chips follow seed order');
+  await p.click('[data-tag="Co-op"]');
+  ok(await p.locator('.game-card').count() === 1 && (await text('.game-card')).includes('Sky Team'), 'Co-op tag filters to Sky Team');
+  await p.click('[data-tag="Dice"]');
+  ok(await p.locator('.game-card').count() === 1, 'second tag narrows (AND)');
+  ok(await p.locator('[data-action="tags-clear"]').count() === 1, 'clear button shown');
+  await p.reload(); await tab('games');
+  ok(await p.locator('.game-card').count() === 1, 'selected tags kept after reload');
+  await p.click('[data-action="tags-clear"]');
+  ok(await p.locator('.game-card').count() === 4, 'clear shows all games');
+  await p.click('[data-tag="Card game"]');
+  ok(await p.locator('.game-card').count() === 2 && (await p.locator('.tag-row .tag-chip').count()) < 10, 'only tags present in the list are offered');
+  await p.click('[data-tag="Card game"]');
+  await p.fill('#search', 'engine building');
+  ok(await p.locator('.game-card').count() === 1 && (await text('.game-card')).includes('Ark Nova'), 'search matches tags');
+  await p.fill('#search', '');
+
   console.log('Join / leave / clash');
   await p.click('[data-game="cascadia"]');
   await p.click('[data-session="cascadia-1"]');
@@ -90,6 +109,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await p.click('[data-game="heat"]'); await p.click('[data-action="edit"]');
   await p.fill('[name=booth]', '3-B210'); await p.click('#game-form button[type=submit]');
   ok((await text('#sheet-body')).includes('3-B210'), 'seed game editable');
+  ok(JSON.stringify((await db()).customGames.find(g => g.id === 'heat').tags) === '["Card game","6+ players"]', 'editing keeps the tags');
   await close();
   ok(await p.locator('.game-card').count() === 5, 'no duplicate after editing seed game');
 
