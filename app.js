@@ -216,7 +216,9 @@
     return html + `<div class="board"><div class="timeline">${parts.join("")}</div></div>`;
   }
   const fmt = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
-  const hallPill = g => (g.hall || g.booth) ? `<span class="pill">🏛 ${[g.hall && `Hall ${g.hall}`, g.booth].filter(Boolean).map(esc).join(" · ")}</span>` : "";
+  // "Hall 6 · F300" rather than "Hall 6 · 6-F300"
+  const hallText = g => [g.hall && `Hall ${g.hall}`, g.hall && g.booth && g.booth.startsWith(`${g.hall}-`) ? g.booth.slice(String(g.hall).length + 1) : g.booth].filter(Boolean).join(" · ");
+  const hallPill = g => (g.hall || g.booth) ? `<span class="pill">🏛 ${esc(hallText(g))}</span>` : "";
 
   function viewGames() {
     const plan = myPlan();
@@ -228,7 +230,7 @@
     list = list.filter(g => ui.tags.every(t => tagsOf(g).includes(t)));
     const tagCounts = new Map();
     list.forEach(g => tagsOf(g).forEach(t => tagCounts.set(t, (tagCounts.get(t) || 0) + 1)));
-    const tagChips = [...ui.tags.filter(t => !tagCounts.has(t)), ...allTags().filter(t => tagCounts.has(t))]
+    const tagChips = [...ui.tags, ...allTags().filter(t => tagCounts.has(t) && !ui.tags.includes(t))]
       .map(t => { const on = ui.tags.includes(t);
         return `<button class="btn small tag-chip ${on ? "" : "secondary"}" data-action="tag" data-tag="${esc(t)}" aria-pressed="${on}">${esc(t)}${on ? "" : ` <span class="count">${tagCounts.get(t) || 0}</span>`}</button>`; })
       .join("");
@@ -244,7 +246,7 @@
       <div class="row" style="margin-bottom:8px">${chips}</div>
       ${tagChips ? `<div class="tag-row" role="group" aria-label="Filter by game type">${ui.tags.length ? `<button class="btn small tag-chip clear" data-action="tags-clear">✕ Clear</button>` : `<span class="tag-label">🏷 Type</span>`}${tagChips}</div>` : ""}
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
-      ${nPreview && !ui.query ? `<div class="banner">📰 ${games().length} SPIEL 2026 games from BoardGameGeek's SPIEL preview and preview articles (the ${nPreview} hyped picks from articles are marked <b>preview</b>). Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
+      ${nPreview && !ui.query && !ui.tags.length ? `<div class="banner">📰 ${games().length} SPIEL 2026 games from BoardGameGeek's SPIEL preview and preview articles (the ${nPreview} hyped picks from articles are marked <b>preview</b>). Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
       <p class="muted small" style="color:var(--paper);opacity:.8;margin:0 4px 8px">${list.length} game${list.length === 1 ? "" : "s"}</p>
       ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
       ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}`;
@@ -417,7 +419,7 @@
       ${g.preview ? `<p><span class="pill preview">from preview articles: check details at the fair</span></p>` : ""}
       ${tagsOf(g).length ? `<div class="tags">${tagsOf(g).map(t => `<span class="pill tag">${esc(t)}</span>`).join("")}</div>` : ""}
       <div class="facts">
-        <div class="fact"><small>Hall / booth</small><b>${g.hall || g.booth ? [g.hall, g.booth].filter(Boolean).map(esc).join(" · ") : "?"}</b></div>
+        <div class="fact"><small>Hall / booth</small><b>${g.hall || g.booth ? esc(hallText(g)) : "?"}</b></div>
         <div class="fact"><small>Players</small><b>${esc(g.players || "?")}</b></div>
         <div class="fact"><small>Play time</small><b>${esc(g.duration || "?")}</b></div>
         <div class="fact"><small>Fair price</small><b>${g.price ? eur.format(g.price) : "?"}</b></div>
@@ -788,11 +790,7 @@
       case "tag": {
         const t = el.dataset.tag;
         ui.tags = ui.tags.includes(t) ? ui.tags.filter(x => x !== t) : [...ui.tags, t];
-        ui.limit = PAGE;
-        const x = $(".tag-row")?.scrollLeft || 0;
-        render();
-        if ($(".tag-row")) $(".tag-row").scrollLeft = x;
-        break;
+        ui.limit = PAGE; render(); break;
       }
       case "tags-clear": ui.tags = []; ui.limit = PAGE; render(); break;
       case "more": ui.limit += PAGE * 2; render(); break;

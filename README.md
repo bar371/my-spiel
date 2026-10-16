@@ -93,6 +93,12 @@ Demo times are unpublished, so add them with **Edit game** in the app (shared wi
 
 To refresh the BGG games, run the **Import BGG SPIEL preview** workflow (Actions tab), or locally
 `node tools/import-bgg-preview.js`. It keeps the preview games, only filling their empty fields from BGG.
+
+Every game has `tags` for the type filter in the Games tab (Engine building, Deck building, Worker placement,
+PvP / conflict, Co-op, Trick-taking, Party, Solo, Quick, …; the chip order is `SPIEL_SEED.tags`). The importer
+derives them from BGG's mechanics, categories and subdomains, falls back to keywords in the description for
+games BGG hasn't classified, and adds hand-picked ones from `MANUAL_TAGS` in `tools/import-bgg-preview.js`.
+Selecting several tags shows games that have all of them. Tags can also be changed per game with **Edit game**.
 The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
