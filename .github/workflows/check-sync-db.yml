@@ -1,0 +1,44 @@
+name: Check crew sync database
+
+# Checks the Firebase Realtime Database in data/sync-config.js the way the app uses it:
+# a crew path can be written, read and streamed without login, and the root can't be listed.
+on:
+  workflow_dispatch:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - data/sync-config.js
+      - .github/workflows/check-sync-db.yml
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check database rules and access
+        run: |
+          DB=$(node -e "global.window={}; require('./data/sync-config.js'); process.stdout.write(String(window.SPIEL_SYNC.databaseURL).replace(/\/+$/,''))")
+          [ -n "$DB" ] || { echo "databaseURL is empty"; exit 1; }
+          CREW="ci-check-$(date +%s)-$RANDOM"
+          fail=0
+          check() { if [ "$2" = "$3" ]; then echo "✓ $1"; else echo "✗ $1 (expected $3, got $2)"; fail=1; fi; }
+          code=$(curl -s -o root.txt -w '%{http_code}' "$DB/.json"); cat root.txt; echo
+          check "root can't be read" "$code" 401
+          code=$(curl -s -o crews.txt -w '%{http_code}' "$DB/crews.json")
+          check "crew list can't be read" "$code" 401
+          code=$(curl -s -o short.txt -w '%{http_code}' -X PUT -d '"x"' "$DB/crews/short/probe.json")
+          check "short crew codes are refused" "$code" 401
+          code=$(curl -s -o put.txt -w '%{http_code}' -X PUT -d '{"hello":"crew","updatedAt":1}' "$DB/crews/$CREW/probe.json"); cat put.txt; echo
+          check "write to a crew" "$code" 200
+          body=$(curl -s "$DB/crews/$CREW/probe/hello.json")
+          check "read it back" "$body" '"crew"'
+          # Live stream (the app uses EventSource): expect a put event with our data
+          timeout 8 curl -s -N -H 'Accept: text/event-stream' "$DB/crews/$CREW.json" > stream.txt || true
+          head -c 400 stream.txt; echo
+          grep -q '"hello":"crew"' stream.txt && echo "✓ live stream delivers data" || { echo "✗ live stream"; fail=1; }
+          code=$(curl -s -o del.txt -w '%{http_code}' -X DELETE "$DB/crews/$CREW.json")
+          check "clean up" "$code" 200
+          exit $fail
