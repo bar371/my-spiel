@@ -5,7 +5,8 @@
  * everybody sees. Personal picks, budgets and games added in the app are
  * stored on each device and can be shared with "Share my plan".
  *
- * Session `day` values must be one of the fair days below.
+ * Session `day` values must be one of the fair days below (the days we attend;
+ * the fair itself also runs on Sunday 25 October).
  */
 window.SPIEL_SEED = {
   version: 1,
@@ -15,8 +16,7 @@ window.SPIEL_SEED = {
     days: [
       { date: "2026-10-22", label: "Thu", open: "10:00", close: "19:00" },
       { date: "2026-10-23", label: "Fri", open: "10:00", close: "19:00" },
-      { date: "2026-10-24", label: "Sat", open: "10:00", close: "19:00" },
-      { date: "2026-10-25", label: "Sun", open: "10:00", close: "18:00" }
+      { date: "2026-10-24", label: "Sat", open: "10:00", close: "19:00" }
     ]
   },
 
@@ -82,7 +82,7 @@ window.SPIEL_SEED = {
         "Classic-era motorsport racing. Manage your hand of speed cards and your engine's heat to push through the corners without spinning out.",
       sessions: [
         { id: "heat-1", day: "2026-10-23", start: "14:00", end: "15:00", location: "Demo table", note: "Sample time" },
-        { id: "heat-2", day: "2026-10-25", start: "11:00", end: "12:00", location: "Demo table", note: "Sample time" }
+        { id: "heat-2", day: "2026-10-24", start: "12:00", end: "13:00", location: "Demo table", note: "Sample time" }
       ]
     },
     {
@@ -100,7 +100,7 @@ window.SPIEL_SEED = {
         "Cooperative two-player dice game: pilot and co-pilot try to land a plane safely, placing dice in secret without talking about them.",
       sessions: [
         { id: "sky-team-1", day: "2026-10-24", start: "10:30", end: "11:00", location: "Demo table", note: "Sample time" },
-        { id: "sky-team-2", day: "2026-10-25", start: "14:00", end: "14:30", location: "Demo table", note: "Sample time" }
+        { id: "sky-team-2", day: "2026-10-23", start: "16:00", end: "16:30", location: "Demo table", note: "Sample time" }
       ]
     }
   ]
