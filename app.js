@@ -71,12 +71,16 @@
     return (gamesCache = list.sort((a, b) => a.name.localeCompare(b.name)));
   }
   const tagsOf = g => Array.isArray(g.tags) ? g.tags : [];
-  // Tags in the order the seed lists them (SEED.tags), then any custom ones A–Z
+  // Filter chips that follow from the game itself rather than its tags, so a demo time
+  // added in the app shows up under "Demo slot" straight away
+  const STATUS_TAGS = { "Preview": "📰 Preview", "Demo slot": "🎲 Demo slot" };
+  const filterTagsOf = g => [...(g.preview ? ["Preview"] : []), ...((g.sessions || []).length ? ["Demo slot"] : []), ...tagsOf(g)];
+  // Status chips first, then tags in the order the seed lists them (SEED.tags), then any custom ones A–Z
   let tagsCache = null;
   function allTags() {
     if (tagsCache && tagsCache.list === gamesCache) return tagsCache.tags;
-    const seen = new Set(); games().forEach(g => tagsOf(g).forEach(t => seen.add(t)));
-    const order = Array.isArray(SEED.tags) ? SEED.tags : [];
+    const seen = new Set(); games().forEach(g => filterTagsOf(g).forEach(t => seen.add(t)));
+    const order = [...Object.keys(STATUS_TAGS), ...(Array.isArray(SEED.tags) ? SEED.tags : [])];
     const tags = [...order.filter(t => seen.has(t)), ...[...seen].filter(t => !order.includes(t)).sort((a, b) => a.localeCompare(b))];
     tagsCache = { list: gamesCache, tags };
     return tags;
@@ -284,12 +288,12 @@
     if (ui.filter === "joining") { const planned = new Set(planItems(db.currentMember).map(x => x.g.id)); list = list.filter(g => planned.has(g.id)); }
     if (ui.filter === "buy") list = list.filter(g => plan.buy[g.id]);
     // Tags narrow the list: a game must have every selected tag
-    list = list.filter(g => ui.tags.every(t => tagsOf(g).includes(t)));
+    list = list.filter(g => ui.tags.every(t => filterTagsOf(g).includes(t)));
     const tagCounts = new Map();
-    list.forEach(g => tagsOf(g).forEach(t => tagCounts.set(t, (tagCounts.get(t) || 0) + 1)));
+    list.forEach(g => filterTagsOf(g).forEach(t => tagCounts.set(t, (tagCounts.get(t) || 0) + 1)));
     const tagChips = [...ui.tags, ...allTags().filter(t => tagCounts.has(t) && !ui.tags.includes(t))]
       .map(t => { const on = ui.tags.includes(t);
-        return `<button class="btn small tag-chip ${on ? "" : "secondary"}" data-action="tag" data-tag="${esc(t)}" aria-pressed="${on}">${esc(t)}${on ? "" : ` <span class="count">${tagCounts.get(t) || 0}</span>`}</button>`; })
+        return `<button class="btn small tag-chip ${on ? "" : "secondary"}" data-action="tag" data-tag="${esc(t)}" aria-pressed="${on}">${esc(STATUS_TAGS[t] || t)}${on ? "" : ` <span class="count">${tagCounts.get(t) || 0}</span>`}</button>`; })
       .join("");
     const anySample = games().some(g => g.sample);
     const nPreview = games().filter(g => g.preview).length;
@@ -601,7 +605,7 @@
         </div>
         <label class="field">Description<textarea name="description">${esc(g.description || "")}</textarea></label>
         <label class="field">Tags <span class="muted small">(comma-separated, e.g. Engine building, Co-op)</span><input name="tags" value="${esc(tagsOf(g).join(", "))}" list="tag-options" autocomplete="off"></label>
-        <datalist id="tag-options">${allTags().map(t => `<option value="${esc(t)}">`).join("")}</datalist>
+        <datalist id="tag-options">${allTags().filter(t => !STATUS_TAGS[t]).map(t => `<option value="${esc(t)}">`).join("")}</datalist>
         <h3>🕒 Sessions</h3>
         <div id="sess-list">${(g.sessions || []).map(sessionRow).join("")}</div>
         <button type="button" class="btn small secondary" data-action="add-session">＋ Add session</button>

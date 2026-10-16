@@ -55,6 +55,7 @@ window.SPIEL_SEED = {
     },
     {
       id: "ark-nova",
+      preview: true,
       tags: ["Engine building", "Card game", "Long (2h+)"],
       sample: true,
       name: "Ark Nova",
