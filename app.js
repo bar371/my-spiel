@@ -282,7 +282,9 @@
   }
   const fmt = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
   // "Hall 6 · F300" rather than "Hall 6 · 6-F300"
-  const hallText = g => [g.hall && `Hall ${g.hall}`, g.hall && g.booth && g.booth.startsWith(`${g.hall}-`) ? g.booth.slice(String(g.hall).length + 1) : g.booth].filter(Boolean).join(" · ");
+  // and flag booths only known from the publisher's other games
+  const hallText = g => [g.hall && `Hall ${g.hall}`, g.hall && g.booth && g.booth.startsWith(`${g.hall}-`) ? g.booth.slice(String(g.hall).length + 1) : g.booth].filter(Boolean).join(" · ")
+    + (g.boothFrom === "publisher" && (g.hall || g.booth) ? " (publisher's stand)" : "");
   const hallPill = g => (g.hall || g.booth) ? `<span class="pill">🏛 ${esc(hallText(g))}</span>` : "";
 
   function viewGames() {

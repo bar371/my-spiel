@@ -104,6 +104,12 @@ const TAG_RULES = [
   ["Card game",         { bgg: /^card game$/,                                                         text: /card game/ }]
 ];
 
+// BGG ids of SPIEL-preview listings to keep even though neither they nor their publisher
+// list a booth
+const KEEP_WITHOUT_BOOTH = [
+  474854  // Agent Avenue: Four Seasons (Nerdlab Games)
+];
+
 // Hand-picked tags, by game id, for games the rules above miss
 const MANUAL_TAGS = {
   "8-dragons": ["Set collection"],
@@ -220,7 +226,7 @@ function merge(seed, bggGames) {
   const ids = new Set(kept.map(g => g.id));
   const bggTags = new Map();
   const added = [];
-  let enriched = 0, skipped = 0;
+  let enriched = 0, skipped = 0, inferred = 0;
   // The same game can be listed more than once (several publishers or editions): combine them
   const byId = new Map();
   bggGames.forEach(b => {
@@ -229,6 +235,22 @@ function merge(seed, bggGames) {
     Object.keys(b).forEach(k => { if (prev[k] === undefined) prev[k] = b[k]; });
   });
   const unique = [...byId.values()];
+  // Where each publisher exhibits: the booth most of its listings give, counting the
+  // listings where it is the main publisher first
+  const pubList = b => String(b.publisher || "").split(" / ").map(p => norm(p)).filter(Boolean);
+  const pubBooths = new Map();
+  unique.filter(b => b.booth).forEach(b => pubList(b).forEach((p, i) => {
+    if (!pubBooths.has(p)) pubBooths.set(p, new Map());
+    const key = `${b.hall || ""}|${b.booth}`, m = pubBooths.get(p);
+    m.set(key, (m.get(key) || 0) + (i === 0 ? 10 : 1));
+  }));
+  const publisherBooth = b => {
+    for (const p of pubList(b)) {
+      const m = pubBooths.get(p);
+      if (m) { const [key] = [...m.entries()].sort((x, y) => y[1] - x[1])[0]; const [hall, booth] = key.split("|"); return { hall: hall || undefined, booth }; }
+    }
+    return null;
+  };
   // Exact matches first, so a loose name match can't take a game that has an exact one
   const matches = new Map(), taken = new Set();
   unique.forEach(b => {
@@ -251,14 +273,25 @@ function merge(seed, bggGames) {
       if (touched) enriched++;
       continue;
     }
-    // No hall or booth listed: most likely not exhibited at the fair
-    if (!b.hall && !b.booth) { skipped++; continue; }
+    // No hall or booth listed: use the publisher's booth from its other listings; with
+    // none of those either it's most likely not exhibited, unless kept on purpose
+    if (!b.hall && !b.booth) {
+      const pb = publisherBooth(b);
+      if (pb) { Object.assign(b, pb, { boothFrom: "publisher" }); inferred++; }
+      else if (!KEEP_WITHOUT_BOOTH.includes(b.bgg)) { skipped++; continue; }
+    }
     let id = slug(b.name) || b.id;
     if (ids.has(id)) id = b.id;
     ids.add(id);
     const manual = MANUAL_TAGS[id] || MANUAL_TAGS[b.id];
     added.push({ ...b, id, ...(manual ? { tags: sortTags([...(b.tags || []), ...manual]) } : {}) });
   }
+  // Hand-written games without a booth: the publisher's booth, when BGG lists one
+  kept.forEach(g => {
+    if (g.hall || g.booth) return;
+    const pb = publisherBooth(g);
+    if (pb) { Object.assign(g, pb, { boothFrom: "publisher" }); inferred++; }
+  });
   // Tags for the hand-written games are rebuilt each run: BGG's (when listed there),
   // keywords from the description, and MANUAL_TAGS
   kept.forEach(g => {
@@ -268,7 +301,7 @@ function merge(seed, bggGames) {
     if (t.length) g.tags = t; else delete g.tags;
   });
   added.sort((a, b) => a.name.localeCompare(b.name));
-  return { games: [...kept, ...added], added: added.length, enriched, kept: kept.length, unique: unique.length, skipped };
+  return { games: [...kept, ...added], added: added.length, enriched, kept: kept.length, unique: unique.length, skipped, inferred };
 }
 
 // Same style as the hand-written entries: {"id": "x", "name": "Y", …}
@@ -288,7 +321,8 @@ function write(seed, games, total) {
 `  // ${nPreview} games from SPIEL 2026 preview articles (preview: true, each linking to
   // its source) plus ${total} more from BoardGameGeek's SPIEL 2026 preview
   // (boardgamegeek.com/geekpreviewv2/${PREVIEW_ID}, imported with tools/import-bgg-preview.js;
-  // bgg = BoardGameGeek id; listings without a hall or booth are left out). Demo times are not published, so add them in the app
+  // bgg = BoardGameGeek id; boothFrom: "publisher" = booth taken from the publisher's other
+  // listings; listings with no booth at all are left out). Demo times are not published, so add them in the app
   // (Edit game) or here.
   games: [
 ${games.map(g => "    " + fmt(g)).join(",\n")}
@@ -304,12 +338,12 @@ ${games.map(g => "    " + fmt(g)).join(",\n")}
   const bggGames = items.map(toGame).filter(Boolean);
   if (!bggGames.length) throw new Error(`no games parsed from ${items.length} preview items`);
   const seed = loadSeed();
-  const { games, added, enriched, kept, unique, skipped } = merge(seed, bggGames);
+  const { games, added, enriched, kept, unique, skipped, inferred } = merge(seed, bggGames);
   write(seed, games, added);
   console.log("BGG link types:", JSON.stringify(bggStats.linkKeys));
   console.log("Top BGG mechanics/categories:\n" + Object.entries(bggStats.names).sort((a, b) => b[1] - a[1]).slice(0, 150).map(([k, v]) => `  ${v}\t${k}`).join("\n"));
   const tagCount = {};
   games.forEach(g => (g.tags || []).forEach(t => { tagCount[t] = (tagCount[t] || 0) + 1; }));
   console.log("Tags:", JSON.stringify(tagCount), "| untagged:", games.filter(g => !(g.tags || []).length).length);
-  console.log(`BGG preview: ${items.length} items, ${unique} games. Kept ${kept}, enriched ${enriched}, added ${added}, skipped ${skipped} without a hall or booth. Total ${games.length}.`);
+  console.log(`BGG preview: ${items.length} items, ${unique} games. Kept ${kept}, enriched ${enriched}, added ${added}, booth taken from the publisher for ${inferred}, skipped ${skipped} without any hall or booth. Total ${games.length}.`);
 })().catch(e => { console.error(e); process.exit(1); });
