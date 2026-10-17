@@ -378,3 +378,4 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 .fav-btn.big { font-size: .95rem; font-weight: 800; padding: 6px 11px; background: var(--paper-2); color: var(--ink-soft); box-shadow: 0 3px 0 #b89a66; }
 .fav-btn.big.on { background: #fff0c4; color: #7a5a00; box-shadow: 0 3px 0 #e0b84a; }
 .pill.fav { background: #fff6d8; color: #7a5a00; border-color: #f0d27a; }
+.fact small.also { text-transform: none; letter-spacing: 0; font-weight: 700; margin-top: 2px; }

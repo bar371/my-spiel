@@ -36,6 +36,8 @@ window.SPIEL_SEED = {
   games: [
     {
       id: "cascadia",
+      spiel: 101,
+      otherBooths: ["7-E100"],
       tags: ["Drafting", "Tile laying", "Puzzle"],
       sample: true,
       name: "Cascadia",

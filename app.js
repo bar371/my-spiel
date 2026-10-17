@@ -73,8 +73,9 @@
   const tagsOf = g => Array.isArray(g.tags) ? g.tags : [];
   // Filter chips that follow from the game itself rather than its tags, so a demo time
   // added in the app shows up under "Demo slot" straight away
-  const STATUS_TAGS = { "Preview": "📰 Preview", "Demo slot": "🎲 Demo slot" };
-  const filterTagsOf = g => [...(g.preview ? ["Preview"] : []), ...((g.sessions || []).length ? ["Demo slot"] : []), ...tagsOf(g)];
+  const STATUS_TAGS = { "SPIEL list": "✅ SPIEL list", "Preview": "📰 Preview", "Demo slot": "🎲 Demo slot" };
+  const filterTagsOf = g => [...(g.spiel !== undefined ? ["SPIEL list"] : []), ...(g.preview ? ["Preview"] : []),
+    ...((g.sessions || []).length ? ["Demo slot"] : []), ...tagsOf(g)];
   // Status chips first, then tags in the order the seed lists them (SEED.tags), then any custom ones A–Z
   let tagsCache = null;
   function allTags() {
@@ -314,7 +315,7 @@
       <div class="row" style="margin-bottom:8px">${chips}</div>
       ${tagChips ? `<div class="tag-row" role="group" aria-label="Filter by game type">${ui.tags.length ? `<button class="btn small tag-chip clear" data-action="tags-clear">✕ Clear</button>` : `<span class="tag-label">🏷 Type</span>`}${tagChips}</div>` : ""}
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
-      ${nPreview && !ui.query && !ui.tags.length ? `<div class="banner">📰 ${games().length} SPIEL 2026 games from BoardGameGeek's SPIEL preview and preview articles (the ${nPreview} hyped picks from articles are marked <b>preview</b>). Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
+      ${nPreview && !ui.query && !ui.tags.length ? `<div class="banner">📰 ${games().length} SPIEL 2026 games: SPIEL's official novelty list (✅), BoardGameGeek's SPIEL preview, and ${nPreview} hyped picks from preview articles (marked <b>preview</b>). Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
       <p class="muted small" style="color:var(--paper);opacity:.8;margin:0 4px 8px">${list.length} game${list.length === 1 ? "" : "s"}</p>
       ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
       ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}`;
@@ -337,7 +338,7 @@
           ${g.preview ? `<span class="pill preview">preview</span>` : ""}
           ${hallPill(g)}
           <span class="pill">🕒 ${(g.sessions || []).length} session${(g.sessions || []).length === 1 ? "" : "s"}</span>
-          ${g.price ? `<span class="pill">${eur.format(g.price)}</span>` : ""}
+          ${g.price ? `<span class="pill">${eur.format(g.price)}</span>` : g.priceBand ? `<span class="pill">${esc(g.priceBand)}</span>` : ""}
           ${joining ? `<span class="pill ok">✓ Planned</span>` : ""}
           ${whoFavs(g.id).filter(m => m.id !== db.currentMember).length ? `<span class="pill fav">★ ${esc(whoFavs(g.id).filter(m => m.id !== db.currentMember).map(m => m.name).join(", "))}</span>` : ""}
           ${plan.buy[g.id] ? `<span class="pill gold">🛒 ${plan.buy[g.id].bought ? "Bought" : "Buy list"}</span>` : ""}
@@ -543,10 +544,10 @@
       ${g.preview ? `<p><span class="pill preview">from preview articles: check details at the fair</span></p>` : ""}
       ${tagsOf(g).length ? `<div class="tags">${tagsOf(g).map(t => `<span class="pill tag">${esc(t)}</span>`).join("")}</div>` : ""}
       <div class="facts">
-        <div class="fact"><small>Hall / booth</small><b>${g.hall || g.booth ? esc(hallText(g)) : "?"}</b></div>
+        <div class="fact"><small>Hall / booth</small><b>${g.hall || g.booth ? esc(hallText(g)) : "?"}</b>${(g.otherBooths || []).length ? `<small class="also">also at ${esc(g.otherBooths.join(", "))}</small>` : ""}</div>
         <div class="fact"><small>Players</small><b>${esc(g.players || "?")}</b></div>
         <div class="fact"><small>Play time</small><b>${esc(g.duration || "?")}</b></div>
-        <div class="fact"><small>Fair price</small><b>${g.price ? eur.format(g.price) : "?"}</b></div>
+        <div class="fact"><small>Fair price</small><b>${g.price ? eur.format(g.price) : g.priceBand ? esc(g.priceBand) : "?"}</b></div>
       </div>
       ${g.description ? `<p class="desc">${esc(g.description)}</p>` : ""}
       ${url ? `<p><a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">🔗 ${g.preview ? "Source" : "Game page"}</a>
@@ -646,7 +647,10 @@
     }).filter(s => s.start && s.end);
     for (const s of sessions) if (mins(s.end) <= mins(s.start)) { toast("A session ends before it starts"); return; }
     const priceRaw = String(f.get("price")).trim();
+    // Start from the game as it was, so fields the form doesn't show (official-list id,
+    // extra booths, preview flag…) survive an edit
     const g = {
+      ...(old || {}),
       id, name,
       publisher: String(f.get("publisher")).trim(),
       hall: String(f.get("hall")).trim(),
@@ -660,6 +664,7 @@
       sessions,
       updatedAt: Date.now()
     };
+    if (old && old.booth !== g.booth) delete g.boothFrom;
     db.customGames = db.customGames.filter(x => x.id !== id).concat(g);
     // Drop picks for sessions that no longer exist
     invalidate();

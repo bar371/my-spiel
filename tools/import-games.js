@@ -1,14 +1,21 @@
 #!/usr/bin/env node
 /*
- * Imports the BoardGameGeek SPIEL 2026 preview (boardgamegeek.com/geekpreviewv2/93)
- * into data/spiel-data.js, keeping the hand-written preview games.
+ * Builds the game list in data/spiel-data.js from two sources, keeping the hand-written
+ * preview games:
  *
- *   node tools/import-bgg-preview.js                 # fetch from BGG
- *   node tools/import-bgg-preview.js items.json      # use a saved dump of the API items
+ *  1. SPIEL's official novelty list (spiel-essen.de → The SPIEL → Novelties), the data
+ *     behind that page at maps.eyeled-services.de: what exhibitors bring, with the official
+ *     hall and booth. Games on it get `spiel: <id>`.
+ *  2. BoardGameGeek's SPIEL 2026 preview (boardgamegeek.com/geekpreviewv2/93): BGG links
+ *     and tags, plus games the official list doesn't have (`bgg: <id>`).
  *
- * Preview games (preview: true) are kept as they are; when BGG lists the same
- * game, its booth, hall, price and player count only fill fields that are empty.
- * Games that came from an earlier import (bgg: <id>) are replaced by fresh data.
+ *   node tools/import-games.js                        # fetch both
+ *   node tools/import-games.js --skip-bgg             # official list only, keep the BGG games already in the seed
+ *   node tools/import-games.js --bgg items.json --spiel snapshot.json   # saved copies
+ *
+ * Preview games (preview: true) are kept as written; the sources only fill empty fields,
+ * except the booth, which the official list always sets. Imported games are rebuilt
+ * from fresh data on every run.
  */
 "use strict";
 const fs = require("fs");
@@ -119,16 +126,16 @@ const MANUAL_TAGS = {
   "medico": ["Bluffing & deduction"]   // everyone secretly picks a location each round
 };
 
-const tagsFrom = ({ bggNames = [], text = "", minP, maxP, minT, maxT, expansion }) => {
+const tagsFrom = ({ bggNames = [], text = "", minP, maxP, minT, maxT, expansion, extra = [] }) => {
   const names = bggNames.map(n => String(n).toLowerCase());
   const t = String(text).toLowerCase();
-  const tags = TAG_RULES.filter(([, r]) => names.some(n => r.bgg.test(n)) || r.text.test(t)).map(([tag]) => tag);
+  const tags = [...extra, ...TAG_RULES.filter(([, r]) => names.some(n => r.bgg.test(n)) || r.text.test(t)).map(([tag]) => tag)];
   // Fighting monsters together isn't PvP: keep the conflict tag on co-op games only when
   // players also act against each other
   if (tags.includes("Co-op") && tags.includes("PvP / conflict") &&
       !names.some(n => /take that|player elimination|semi-cooperative|traitor|wargame/.test(n)) && !/\bpvp\b|take[- ]that/.test(t))
     tags.splice(tags.indexOf("PvP / conflict"), 1);
-  if (num(minP) === 1) tags.push("Solo");
+  if (num(minP) === 1 && !tags.includes("Solo")) tags.push("Solo");
   if (num(maxP) === 2 || (!maxP && /\b(?:two|2)[- ]player|\bfor two\b|\bduel/.test(t))) tags.push("2 players");
   if (num(maxP) >= 6) tags.push("6+ players");
   const tMax = num(maxT) || num(minT);
@@ -137,7 +144,8 @@ const tagsFrom = ({ bggNames = [], text = "", minP, maxP, minT, maxT, expansion 
   if (expansion) tags.push("Expansion");
   return tags;
 };
-const TAG_ORDER = [...TAG_RULES.map(([t]) => t), "Solo", "2 players", "6+ players", "Quick (≤30 min)", "Long (2h+)", "Expansion"];
+const TAG_ORDER = [...TAG_RULES.map(([t]) => t), "Solo", "2 players", "6+ players", "Quick (≤30 min)", "Long (2h+)", "Expansion",
+  "Beginner", "Connoisseur", "Expert"];
 const sortTags = tags => [...new Set(tags)].sort((a, b) => TAG_ORDER.indexOf(a) - TAG_ORDER.indexOf(b));
 // "1–4" → [1, 4], "90 min" → [90, 90], "up to 6" → [undefined, 6]
 const bounds = s => { const n = String(s || "").match(/\d+(?:\.\d+)?/g) || []; return /up to/i.test(s) ? [undefined, n[0]] : [n[0], n[1] || n[0]]; };
@@ -208,7 +216,8 @@ function loadSeed() {
 }
 
 function merge(seed, bggGames) {
-  const kept = seed.games.filter(g => g.bgg === undefined || g.preview); // drop stale imports, keep hand-written ones
+  // Drop earlier imports (they're rebuilt below and by the official-list step), keep hand-written games
+  const kept = seed.games.filter(g => g.preview || (g.bgg === undefined && g.spiel === undefined));
   const byName = new Map();
   kept.forEach(g => { byName.set(norm(g.name), g); if (!byName.has(norm(bare(g.name)))) byName.set(norm(bare(g.name)), g); });
   // "Foundation" (preview) vs "Foundation: Isaac Asimov" (BGG), same publisher
@@ -318,11 +327,10 @@ function write(seed, games, total) {
   const tagLine = `  tags: ${fmt(TAG_ORDER)},\n`;
   const withTags = /\n  tags: \[.*\],\n/.test(head) ? head.replace(/\n  tags: \[.*\],\n/, "\n" + tagLine) : head + tagLine + "\n";
   const out = withTags +
-`  // ${nPreview} games from SPIEL 2026 preview articles (preview: true, each linking to
-  // its source) plus ${total} more from BoardGameGeek's SPIEL 2026 preview
-  // (boardgamegeek.com/geekpreviewv2/${PREVIEW_ID}, imported with tools/import-bgg-preview.js;
-  // bgg = BoardGameGeek id; boothFrom: "publisher" = booth taken from the publisher's other
-  // listings; listings with no booth at all are left out). Demo times are not published, so add them in the app
+`  // Built by tools/import-games.js: ${total.spiel} games from SPIEL's official novelty list
+  // (spiel: <id>, with the official hall and booth), ${total.bgg} more from BoardGameGeek's SPIEL 2026
+  // preview (bgg: <id>; boothFrom: "publisher" = the publisher's booth), and ${nPreview} picks from
+  // preview articles (preview: true). Demo times are not published, so add them in the app
   // (Edit game) or here.
   games: [
 ${games.map(g => "    " + fmt(g)).join(",\n")}
@@ -332,18 +340,176 @@ ${games.map(g => "    " + fmt(g)).join(",\n")}
   fs.writeFileSync(DATA, out);
 }
 
+// ---------- SPIEL's official novelty list ----------
+const SPIEL_API = "https://maps.eyeled-services.de/en/spiel26";
+
+async function fetchSpiel() {
+  const get = async name => {
+    for (let attempt = 0; ; attempt++) {
+      const res = await fetch(`${SPIEL_API}/${name}`, { headers: { "User-Agent": "Mozilla/5.0 (my-spiel planner importer)", Referer: "https://www.spiel-essen.de/" } });
+      const text = await res.text();
+      try { if (res.ok) return JSON.parse(text); } catch (_) { /* retry */ }
+      if (attempt >= 4) throw new Error(`${name}: HTTP ${res.status}: ${text.slice(0, 200)}`);
+      await new Promise(r => setTimeout(r, 3000 * 2 ** attempt));
+    }
+  };
+  const P = await get("products"), E = await get("exhibitors");
+  const info = s => String(s || "").replace(/<\/(td|tr|p|li)>/gi, " | ").replace(/<br\s*\/?>/gi, " ").replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ").replace(/\s+/g, " ").trim();
+  return {
+    themes: Object.fromEntries((P.productThemes || []).map(t => [t.ID, t.TITEL])),
+    products: (P.products || []).map(p => ({ ID: p.ID, TITEL: p.TITEL, UNTERTITEL: p.UNTERTITEL, FIRMA_ID: p.FIRMA_ID, HALLE: p.HALLE, STAND: p.STAND,
+      STAENDE: (p.STAENDE || []).map(x => [x.HALLE, x.NAME]), WEB: p.WEB, THEMEN: p.THEMEN, INFO: info(p.INFO) })),
+    exhibitors: (E.exhibitors || []).map(e => ({ ID: e.ID, NAME: e.NAME, HALLE: e.HALLE, STAND: e.STAND, STAENDE: (e.STAENDE || []).map(x => [x.HALLE, x.NAME]) }))
+  };
+}
+
+// Official mechanism / category / level names → our tags
+const OFFICIAL_TAGS = {
+  "engine building": "Engine building", "deck building": "Deck building", "bag building": "Deck building",
+  "worker placement": "Worker placement", "drafting": "Drafting", "tile placement": "Tile laying", "tile placement game": "Tile laying",
+  "set collection": "Set collection", "area control": "Area control", "traitor": "Bluffing & deduction", "hidden roles": "Bluffing & deduction",
+  "crime and detective game": "Bluffing & deduction", "cooperative": "Co-op", "trick taking": "Trick-taking", "push your luck": "Push your luck",
+  "roll'n'write": "Roll & write", "flip'n'write": "Roll & write", "dice rolling": "Dice", "dice placement": "Dice", "dice game": "Dice",
+  "auction": "Negotiation & auctions", "trade": "Negotiation & auctions", "puzzle": "Puzzle", "riddle": "Puzzle", "escape game": "Puzzle",
+  "logic game": "Puzzle", "party game": "Party", "word game": "Party", "quiz game": "Party", "communication game": "Party",
+  "childrens game": "Family", "dungeon crawler": "Adventure & campaign", "legacy": "Adventure & campaign", "campaign game": "Adventure & campaign",
+  "story game": "Adventure & campaign", "roleplaying game": "Adventure & campaign", "dexterity game": "Dexterity", "action game": "Dexterity",
+  "card game": "Card game", "solo game": "Solo", "beginner": "Beginner", "connoisseur": "Connoisseur", "expert": "Expert"
+};
+
+// "Hall 3" + "3G200" → { hall: "3", booth: "3-G200" }; "Galeria" stays as it is
+const officialBooth = (hall, stand) => {
+  const h = String(hall || "").replace(/^hall\s*/i, "").trim();
+  const pb = parseBooth(stand);
+  return pb.booth ? { hall: pb.hall || h || undefined, booth: pb.booth } : { hall: h || undefined, booth: stand || undefined };
+};
+
+// The info box is "Label: | value | | Label: | value | … | description"
+function parseInfo(text) {
+  const parts = String(text || "").split("|").map(x => x.trim()).filter(Boolean);
+  const fields = {}, rest = [];
+  for (let i = 0; i < parts.length; i++) {
+    if (/^[A-Z][A-Za-z /]{2,30}:$/.test(parts[i]) && i + 1 < parts.length && !/:$/.test(parts[i + 1])) { fields[parts[i].slice(0, -1).toLowerCase()] = parts[i + 1]; i++; }
+    else if (!/:$/.test(parts[i])) rest.push(parts[i]);
+  }
+  return { fields, description: rest.join(" ").replace(/\s+/g, " ").trim() };
+}
+
+function officialGame(p, exById, themes) {
+  const th = p.THEMEN || [];
+  const { fields: f, description } = parseInfo(p.INFO);
+  const ex = exById.get(String(p.FIRMA_ID)) || {};
+  const stands = (p.STAENDE && p.STAENDE.length ? p.STAENDE : ex.STAENDE || []).map(([h, n]) => officialBooth(h, n));
+  const uniq = [...new Map(stands.filter(x => x.booth).map(x => [x.booth, x])).values()];
+  const main = uniq[0] || officialBooth(p.HALLE || ex.HALLE, p.STAND || ex.STAND);
+  const pick = re => { const t = th.find(x => re.test(x)); return t && num(t.replace(/^\D+/, "").replace(",", ".")); };
+  const minP = pick(/^BYMINPLAYERS/), maxP = pick(/^BYMAXPLAYERS/);
+  const players = (f["number of players"] || "").replace(/\s*-\s*/, "–").replace(/\s+/g, "") || range(minP, maxP);
+  const tm = (f["playing time"] || "").match(/(\d+)(?:\s*-\s*(\d+))?/);
+  const BANDS = { "0000": [0, 15], "0016": [16, 30], "0031": [31, 60], "0061": [61, 90], "0091": [91, 120], "0121": [121, 180] };
+  const band = (th.find(x => /^BYDURATION_/.test(x)) || "").slice(11);
+  const [minT, maxT] = tm ? [num(tm[1]), num(tm[2]) || num(tm[1])] : BANDS[band] || [];
+  const duration = tm ? range(tm[1], tm[2], " min") : band === "0121" ? "2h+" : BANDS[band] ? `${BANDS[band][0] || "≤"}${BANDS[band][0] ? "–" : ""}${BANDS[band][1]} min` : undefined;
+  const pr = (f["retail price"] || "").match(/\d+(?:[.,]\d+)?/);
+  const priceFrom = pick(/^BYPRICE_/);
+  const names = th.map(id => themes[id]).filter(Boolean).map(n => n.toLowerCase());
+  const extra = names.map(n => OFFICIAL_TAGS[n]).filter(Boolean);
+  const authors = f.authors || f.author;
+  const desc = [authors && authors !== "-" && `By ${authors}.`, description].filter(Boolean).join(" ");
+  const g = {
+    id: `spiel-${p.ID}`,
+    spiel: Number(p.ID) || String(p.ID),
+    name: strip(p.TITEL),
+    publisher: strip(f.publisher && f.publisher !== "-" ? f.publisher : p.UNTERTITEL || ex.NAME) || undefined,
+    hall: main.hall,
+    booth: main.booth,
+    otherBooths: uniq.length > 1 ? uniq.slice(1).map(x => x.booth) : undefined,
+    players: players || undefined,
+    duration,
+    price: pr ? num(pr[0]) : undefined,
+    priceBand: !pr && priceFrom !== undefined ? `€${priceFrom}–${priceFrom + 10}` : undefined,
+    url: p.WEB || undefined,
+    description: desc ? clip(strip(desc), 320) : undefined,
+    sessions: []
+  };
+  const tags = sortTags(tagsFrom({ text: `${g.name} ${desc}`, minP: minP ?? (String(players || "").match(/^\d+/) || [])[0], maxP: maxP ?? (String(players || "").match(/\d+$/) || [])[0],
+    minT, maxT, expansion: th.includes("TYPE.2"), extra }));
+  if (tags.length) g.tags = tags;
+  Object.keys(g).forEach(k => g[k] === undefined && delete g[k]);
+  return g;
+}
+
+function mergeOfficial(games, data) {
+  const exById = new Map(data.exhibitors.map(e => [String(e.ID), e]));
+  const official = data.products.map(p => officialGame(p, exById, data.themes)).filter(o => o.name);
+  // Earlier official-only entries are rebuilt; matched games get their official fields again
+  const base = games.filter(g => g.preview || g.bgg !== undefined || g.spiel === undefined);
+  base.forEach(g => { delete g.spiel; delete g.otherBooths; delete g.priceBand; });
+  const keys = name => { const n = norm(name), b = norm(bare(name)); return [...new Set([n, b, n.replace(/\b\d+\b/g, " ").replace(/\s+/g, " ").trim()])]; };
+  const index = new Map();
+  base.forEach(g => keys(g.name).forEach(k => { if (!index.has(k)) index.set(k, []); index.get(k).push(g); }));
+  const ids = new Set(base.map(g => g.id));
+  const added = [];
+  let matched = 0;
+  for (const o of official) {
+    const g = keys(o.name).map(k => (index.get(k) || []).find(x => x.spiel === undefined)).find(Boolean);
+    if (g) {
+      matched++;
+      Object.assign(g, { spiel: o.spiel, hall: o.hall, booth: o.booth });
+      delete g.boothFrom;
+      if (!g.booth) delete g.booth;
+      if (!g.hall) delete g.hall;
+      for (const k of ["otherBooths", "players", "duration", "price", "priceBand", "url", "description", "publisher"])
+        if (o[k] !== undefined && (g[k] === undefined || g[k] === "")) g[k] = o[k];
+      if (g.price !== undefined) delete g.priceBand;
+      if (o.tags) g.tags = sortTags([...(g.tags || []), ...o.tags]);
+      continue;
+    }
+    let id = slug(o.name) || o.id;
+    if (ids.has(id)) id = o.id;
+    ids.add(id);
+    added.push({ ...o, id });
+  }
+  // BGG-only games whose booth was guessed from the publisher's other BGG listings:
+  // use the publisher's stand from the official exhibitor list instead
+  const exByName = new Map(data.exhibitors.map(e => [norm(e.NAME), e]));
+  let fixed = 0;
+  base.filter(g => g.spiel === undefined && g.boothFrom === "publisher").forEach(g => {
+    const pubs = String(g.publisher || "").split(" / ").map(norm);
+    const ex = pubs.map(p => exByName.get(p) || [...exByName.entries()].find(([n]) => n.startsWith(p + " ") || p.startsWith(n + " "))?.[1]).find(Boolean);
+    if (!ex) return;
+    const b = officialBooth((ex.STAENDE[0] || [])[0] || ex.HALLE, (ex.STAENDE[0] || [])[1] || ex.STAND);
+    if (b.booth) { Object.assign(g, b); fixed++; }
+  });
+  added.sort((a, b) => a.name.localeCompare(b.name));
+  return { games: [...base, ...added], matched, added: added.length, official: official.length, fixed };
+}
+
+const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
 (async () => {
-  const raw = process.argv[2] ? JSON.parse(fs.readFileSync(process.argv[2], "utf8")) : await fetchItems();
-  const items = Array.isArray(raw) ? raw : raw.items || [];
-  const bggGames = items.map(toGame).filter(Boolean);
-  if (!bggGames.length) throw new Error(`no games parsed from ${items.length} preview items`);
-  const seed = loadSeed();
-  const { games, added, enriched, kept, unique, skipped, inferred } = merge(seed, bggGames);
-  write(seed, games, added);
-  console.log("BGG link types:", JSON.stringify(bggStats.linkKeys));
-  console.log("Top BGG mechanics/categories:\n" + Object.entries(bggStats.names).sort((a, b) => b[1] - a[1]).slice(0, 150).map(([k, v]) => `  ${v}\t${k}`).join("\n"));
+  let seed = loadSeed(), games = seed.games, bggAdded = games.filter(g => g.bgg !== undefined && !g.preview && g.spiel === undefined).length;
+  if (!process.argv.includes("--skip-bgg")) {
+    try {
+      const raw = arg("--bgg") ? JSON.parse(fs.readFileSync(arg("--bgg"), "utf8")) : await fetchItems();
+      const items = Array.isArray(raw) ? raw : raw.items || [];
+      const bggGames = items.map(toGame).filter(Boolean);
+      if (!bggGames.length) throw new Error(`no games parsed from ${items.length} preview items`);
+      const r = merge(seed, bggGames);
+      games = r.games;
+      console.log(`BGG preview: ${items.length} items, ${r.unique} games. Kept ${r.kept}, enriched ${r.enriched}, added ${r.added}, booth taken from the publisher for ${r.inferred}, skipped ${r.skipped} without any hall or booth.`);
+    } catch (e) {
+      // Keep the BGG games from the last run rather than failing the whole import
+      console.log("BGG import failed, keeping the BGG games already in the seed:", e.message);
+    }
+  }
+  const data = arg("--spiel") ? JSON.parse(fs.readFileSync(arg("--spiel"), "utf8")) : await fetchSpiel();
+  const o = mergeOfficial(games, data);
+  games = o.games;
+  bggAdded = games.filter(g => g.bgg !== undefined && !g.preview && g.spiel === undefined).length;
+  write(seed, games, { spiel: games.filter(g => g.spiel !== undefined).length, bgg: bggAdded });
   const tagCount = {};
   games.forEach(g => (g.tags || []).forEach(t => { tagCount[t] = (tagCount[t] || 0) + 1; }));
   console.log("Tags:", JSON.stringify(tagCount), "| untagged:", games.filter(g => !(g.tags || []).length).length);
-  console.log(`BGG preview: ${items.length} items, ${unique} games. Kept ${kept}, enriched ${enriched}, added ${added}, booth taken from the publisher for ${inferred}, skipped ${skipped} without any hall or booth. Total ${games.length}.`);
+  console.log(`SPIEL list: ${o.official} novelties, ${o.matched} matched to games already listed, ${o.added} added; official exhibitor booth for ${o.fixed} BGG games. Total ${games.length}.`);
 })().catch(e => { console.error(e); process.exit(1); });

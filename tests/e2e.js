@@ -53,8 +53,11 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await p.click('[data-filter="all"]');
 
   console.log('Games: type tags');
-  ok(await p.locator('.tag-row .tag-chip').count() === 12, 'tag chips listed');
-  ok((await text('.tag-row')).replace(/\s+/g, ' ').startsWith('🏷 Type 📰 Preview 1 🎲 Demo slot 4 Engine building'), 'status chips first, then tags in seed order');
+  ok(await p.locator('.tag-row .tag-chip').count() === 13, 'tag chips listed');
+  ok((await text('.tag-row')).replace(/\s+/g, ' ').startsWith('🏷 Type ✅ SPIEL list 1 📰 Preview 1 🎲 Demo slot 4 Engine building'), 'status chips first, then tags in seed order');
+  await p.click('[data-tag="SPIEL list"]');
+  ok(await p.locator('.game-card').count() === 1 && (await text('.game-card')).includes('Cascadia'), 'SPIEL list chip shows official-list games');
+  await p.click('[data-tag="SPIEL list"]');
   await p.click('[data-tag="Preview"]');
   ok(await p.locator('.game-card').count() === 1 && (await text('.game-card')).includes('Ark Nova'), 'Preview chip shows preview games');
   await p.click('[data-tag="Preview"]');
@@ -133,6 +136,11 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await p.fill('[name=booth]', '3-B210'); await p.click('#game-form button[type=submit]');
   ok((await text('#sheet-body')).includes('3-B210'), 'seed game editable');
   ok(JSON.stringify((await db()).customGames.find(g => g.id === 'heat').tags) === '["Card game","6+ players"]', 'editing keeps the tags');
+  await close();
+  await p.click('[data-game="cascadia"]');
+  ok((await text('#sheet-body')).includes('also at 7-E100'), 'sheet lists other booths');
+  await p.click('[data-action="edit"]'); await p.fill('[name=players]', '1–4'); await p.click('#game-form button[type=submit]');
+  { const c = (await db()).customGames.find(g => g.id === 'cascadia'); ok(c.spiel === 101 && c.otherBooths[0] === '7-E100' && c.players === '1–4', 'editing keeps official-list fields'); }
   await close();
   ok(await p.locator('.game-card').count() === 5, 'no duplicate after editing seed game');
 
@@ -252,7 +260,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok((await q.locator('#sheet-body').innerText()).includes("Sjoerd's plan"), 'import prompt after picking');
   await q.click('[data-action="accept-plan"]');
   const d2 = await q.evaluate(() => JSON.parse(localStorage.getItem('spiel26:v1')));
-  ok(d2.plans.sjord.sessions.length === 1 && d2.customGames.length === 2, 'Sjoerd plan + custom games imported');
+  ok(d2.plans.sjord.sessions.length === 1 && d2.customGames.length === 3, 'Sjoerd plan + custom games imported');
   ok(d2.plans.sjord.visits.length === 1, 'visits travel with the share link');
   ok(q.url().indexOf('#plan') === -1, 'hash cleared after import');
   await q.click('.tabbar [data-tab="games"]');
