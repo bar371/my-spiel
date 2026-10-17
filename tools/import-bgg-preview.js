@@ -286,6 +286,12 @@ function merge(seed, bggGames) {
     const manual = MANUAL_TAGS[id] || MANUAL_TAGS[b.id];
     added.push({ ...b, id, ...(manual ? { tags: sortTags([...(b.tags || []), ...manual]) } : {}) });
   }
+  // Hand-written games without a booth: the publisher's booth, when BGG lists one
+  kept.forEach(g => {
+    if (g.hall || g.booth) return;
+    const pb = publisherBooth(g);
+    if (pb) { Object.assign(g, pb, { boothFrom: "publisher" }); inferred++; }
+  });
   // Tags for the hand-written games are rebuilt each run: BGG's (when listed there),
   // keywords from the description, and MANUAL_TAGS
   kept.forEach(g => {
