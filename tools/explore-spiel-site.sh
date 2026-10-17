@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Temporary: map spiel-essen.de's exhibitor / novelty pages and any data endpoints behind them.
+# Temporary: find the data behind spiel-essen.de's exhibitor and novelty pages.
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Safari/537.36"
 mkdir -p out
-fetch() { curl -sSL -m 30 -A "$UA" -o "out/$2" -w "%{http_code} %{size_download} %{url_effective}\n" "$1"; }
-for u in https://www.spiel-essen.de/ https://www.spiel-essen.de/en/ https://www.spiel-essen.de/sitemap.xml https://www.spiel-essen.de/robots.txt; do
-  f=$(echo "$u" | sed 's#https://##; s#[/:]#_#g'); echo "== $u"; fetch "$u" "$f"
+fetch() { curl -sSL -m 40 -A "$UA" -o "out/$2" -w "%{http_code} %{size_download} %{content_type} %{url_effective}\n" "$1"; }
+for p in en/the-spiel/novelties en/the-spiel/exhibitors en/the-spiel/hall-plans en/the-spiel/spiel-app; do
+  f=$(echo "$p" | tr '/' '_').html; echo "== $p"; fetch "https://www.spiel-essen.de/$p" "$f"
+  echo "-- iframes / scripts / data urls"
+  grep -oiE '<iframe[^>]+>|<script[^>]+src="[^"]+"|data-[a-z-]*(url|src|api|endpoint)[a-z-]*="[^"]+"|https?://[^"'"'"' <>)]*(eyeled|api|json|novelt|neuheit|exhibitor|aussteller|catalog)[^"'"'"' <>)]*' "out/$f" | sort -u | head -40
+  echo "-- visible text sample"
+  sed 's/<script.*<\/script>//g; s/<[^>]*>/ /g' "out/$f" | tr -s ' \n' | grep -iE 'novelt|exhibit|game|app|eyeled|list|search' | head -15
 done
-echo "== links mentioning exhibitors / novelties / hall plan / app"
-cat out/* | grep -oiE 'https?://[^"'"'"' <>)]+|href="[^"]+"' | sed 's/^href="//; s/"$//' | grep -iE 'ausstell|exhibit|neuheit|novelt|new-games|hallenplan|hall-plan|floor|app|messe|mapyourshow|expo|catalog|katalog|api|json' | sort -u | head -150
-echo "== sitemap urls (filtered)"
-grep -oE '<loc>[^<]+' out/*sitemap* 2>/dev/null | sed 's/.*<loc>//' | grep -iE 'ausstell|exhibit|neuheit|novelt|game|spiel' | head -80
