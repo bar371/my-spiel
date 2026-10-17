@@ -87,26 +87,35 @@ Add an entry to `games` in `data/spiel-data.js`:
 }
 ```
 
-The shared list holds the BoardGameGeek SPIEL 2026 preview (boardgamegeek.com/geekpreviewv2/93; about 1,000 games,
-with price and player count where the publisher gave them; `bgg` is the BoardGameGeek id). A listing without a booth
-gets its publisher's booth from the publisher's other listings (shown as "publisher's stand", `boothFrom: "publisher"`);
-listings with no booth at all are left out, except those in `KEEP_WITHOUT_BOOTH` in the importer. Plus 33 games compiled
-from preview articles (marked `preview: true`, each linking to its source).
+The shared list comes from two sources plus hand-picked games:
+
+1. **SPIEL's official novelty list** (spiel-essen.de → The SPIEL → Novelties, about 1,900 games). It is read from the
+   same public data the SPIEL website uses (`maps.eyeled-services.de/en/spiel26/products` and `/exhibitors`) and gives the
+   official hall and booth, extra booths (`otherBooths`), players, play time, retail price and the exhibitor's mechanisms
+   and categories. These games have `spiel: <id>` and the **✅ SPIEL list** chip.
+2. **BoardGameGeek's SPIEL 2026 preview** (boardgamegeek.com/geekpreviewv2/93), for BGG links and tags and for games the
+   official list doesn't have (`bgg: <id>`). A BGG listing without a booth gets its publisher's stand from the official
+   exhibitor list (shown as "publisher's stand", `boothFrom: "publisher"`); listings with no booth anywhere are left out.
+3. **33 picks from preview articles** (`preview: true`, each linking to its source), kept as written; the sources only fill
+   their empty fields, except the booth, which the official list always sets.
+
 Demo times are unpublished, so add them with **Edit game** in the app (shared with the crew when sync is on) or in this file.
 
-To refresh the BGG games, run the **Import BGG SPIEL preview** workflow (Actions tab), or locally
-`node tools/import-bgg-preview.js`. It keeps the preview games, only filling their empty fields from BGG.
+To refresh the list, run the **Import SPIEL games** workflow (Actions tab), or locally `node tools/import-games.js`
+(`--skip-bgg` to only refresh the official list).
 
 Every game has `tags` for the type filter in the Games tab (Engine building, Deck building, Worker placement,
-PvP / conflict, Co-op, Trick-taking, Party, Solo, Quick, …; the chip order is `SPIEL_SEED.tags`). The importer
-derives them from BGG's mechanics, categories and subdomains, falls back to keywords in the description for
-games BGG hasn't classified, and adds hand-picked ones from `MANUAL_TAGS` in `tools/import-bgg-preview.js`.
-Selecting several tags shows games that have all of them. Two extra chips come first: **📰 Preview** (the preview-article games) and **🎲 Demo slot** (games with at least one demo session, including ones added in the app). Tags can also be changed per game with **Edit game**.
+PvP / conflict, Co-op, Trick-taking, Party, Solo, Quick, Beginner / Connoisseur / Expert, …; the chip order is
+`SPIEL_SEED.tags`). The importer derives them from the official mechanisms, categories and level, from BGG's
+mechanics, categories and subdomains, from keywords in the description, and from `MANUAL_TAGS` in
+`tools/import-games.js`. Selecting several tags shows games that have all of them. Three extra chips come first:
+**✅ SPIEL list**, **📰 Preview** (the preview-article games) and **🎲 Demo slot** (games with at least one demo session,
+including ones added in the app). Tags can also be changed per game with **Edit game**.
 The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
 
-`tests/e2e.js` drives the app in headless Chromium through 86 checks: player pick, search and filters,
+`tests/e2e.js` drives the app in headless Chromium through 98 checks: player pick, search and filters,
 join, leave and clashes, add, edit and delete, notes, budget maths, share-link import, backup and restore,
 offline mode, and layout from 320px to desktop.
 
