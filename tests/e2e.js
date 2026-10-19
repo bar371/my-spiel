@@ -99,6 +99,19 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(await p.locator('.game-card').count() === 1 && await p.locator('.unknown-game').count() === 0, 'a found game is not reported unknown');
   await p.fill('#search', '');
 
+  console.log('Sort by price');
+  const order = async () => (await p.locator('.game-card .game-name').allInnerTexts()).join(',');
+  const priced = await p.evaluate(() => window.SPIEL_SEED.games.filter(g => g.price).map(g => [g.name, g.price]));
+  const asc = priced.slice().sort((a, b) => a[1] - b[1]).map(x => x[0]);
+  await p.selectOption('#sort', 'price-asc');
+  ok((await order()).startsWith(asc.join(',')), 'price low to high: ' + await order());
+  await p.selectOption('#sort', 'price-desc');
+  ok((await order()).startsWith(asc.slice().reverse().join(',')), 'price high to low: ' + await order());
+  await p.reload(); await tab('games');
+  ok(await p.inputValue('#sort') === 'price-desc', 'sort choice kept after reload');
+  await p.selectOption('#sort', 'name');
+  ok((await order()) === (await order()).split(',').slice().sort((a, b) => a.localeCompare(b)).join(','), 'back to name order');
+
   console.log('Favorites');
   await p.click('.game-card[data-game="sky-team"] .fav-btn');
   ok(!(await p.isVisible('#sheet')), 'star on a card does not open the game');

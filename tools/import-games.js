@@ -163,7 +163,7 @@ const bggStats = { linkKeys: {}, names: {} };
 
 // Things that aren't games: playmats, sleeves, card albums and deck boxes, dice sets, gaming
 // tables, component upgrades… (official list: also the "Game accessories" category)
-const NON_GAME = /\b(play ?mats?|game ?mats?|neoprene|sleeves?|deck ?box(es)?|deck pods?|card ?case|card holder|cardport|cards' shuttle|albums?|binders?|storage|organi[sz]ers?|inserts?|box bands?|sidekick|squire|bastion|(soft |dyna)?crate|life counter|dice (sets?|trays?|bags?)|dice towers?(?! sponsored)|polyhedral|\d+ ?sided dice|metal dice|gaming ?tables?|game ?tables?|brettspieltisch|tisch-erweiterung|table ?toppers?|posters?|terrain markers?|upgraded? components|upgrade (kit|pack)|deluxe upgrade|token sets?|coin sets?|playbits?|gm screen|game master screen|paint sets?|card stands?|card racks?|carrying case)\b/i;
+const NON_GAME = /\b(play ?mats?|game ?mats?|neoprene|sleeves?|deck ?box(es)?|deck pods?|card ?case|card holder|cardport|cards' shuttle|albums?|binders?|storage|organi[sz]ers?|inserts?|box bands?|sidekick|squire|bastion|(soft |dyna)?crate|life counter|dice (sets?|trays?|bags?)|pipped|engrav(ed|ing)|dice towers?(?! sponsored)|polyhedral|\d+ ?sided dice|metal dice|gaming ?tables?|game ?tables?|brettspieltisch|tisch-erweiterung|table ?toppers?|posters?|terrain markers?|upgraded? components|upgrade (kit|pack)|deluxe upgrade|token sets?|coin sets?|playbits?|gm screen|game master screen|paint sets?|card stands?|card racks?|carrying case)\b/i;
 const isNonGame = (name, accessory) => NON_GAME.test(name) || (accessory && !/\bexpansion\b/i.test(name));
 
 function toGame(it) {

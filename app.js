@@ -186,13 +186,15 @@
     query: "",
     filter: "all",
     tags: [],
+    sort: "name",
     limit: PAGE,
     sheetGame: null
   };
   try { Object.assign(ui, JSON.parse(sessionStorage.getItem("spiel26:ui") || "{}"), { sheetGame: null }); } catch (_) {}
   if (!DAYS.some(d => d.date === ui.day)) ui.day = DAYS[0].date;
   if (!Array.isArray(ui.tags)) ui.tags = [];
-  const keepUi = () => { try { sessionStorage.setItem("spiel26:ui", JSON.stringify({ tab: ui.tab, day: ui.day, filter: ui.filter, tags: ui.tags })); } catch (_) {} };
+  if (!["name", "price-asc", "price-desc"].includes(ui.sort)) ui.sort = "name";
+  const keepUi = () => { try { sessionStorage.setItem("spiel26:ui", JSON.stringify({ tab: ui.tab, day: ui.day, filter: ui.filter, tags: ui.tags, sort: ui.sort })); } catch (_) {} };
 
   // ---------- Header ----------
   function renderHeader() {
@@ -303,6 +305,15 @@
       .map(t => { const on = ui.tags.includes(t);
         return `<button class="btn small tag-chip ${on ? "" : "secondary"}" data-action="tag" data-tag="${esc(t)}" aria-pressed="${on}">${esc(STATUS_TAGS[t] || t)}${on ? "" : ` <span class="count">${tagCounts.get(t) || 0}</span>`}</button>`; })
       .join("");
+    // Sort by fair price (or the low end of the official price range); games without a price go last
+    if (ui.sort !== "name") {
+      const dir = ui.sort === "price-asc" ? 1 : -1;
+      list = [...list].sort((a, b) => {
+        const pa = priceOf(a), pb = priceOf(b);
+        if (pa == null || pb == null) return (pa == null) - (pb == null);
+        return dir * (pa - pb) || a.name.localeCompare(b.name);
+      });
+    }
     const anySample = games().some(g => g.sample);
     const nPreview = games().filter(g => g.preview).length;
 
@@ -316,7 +327,11 @@
       ${tagChips ? `<div class="tag-row" role="group" aria-label="Filter by game type">${ui.tags.length ? `<button class="btn small tag-chip clear" data-action="tags-clear">✕ Clear</button>` : `<span class="tag-label">🏷 Type</span>`}${tagChips}</div>` : ""}
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
       ${nPreview && !ui.query && !ui.tags.length ? `<div class="banner">📰 ${games().length} SPIEL 2026 games: SPIEL's official novelty list (✅), BoardGameGeek's SPIEL preview, and ${nPreview} hyped picks from preview articles (marked <b>preview</b>). Only games in English are listed (no accessories); other-language editions show up when you search for them. Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
-      <p class="muted small" style="color:var(--paper);opacity:.8;margin:0 4px 8px">${list.length} game${list.length === 1 ? "" : "s"}</p>
+      <div class="list-head"><p class="muted small">${list.length} game${list.length === 1 ? "" : "s"}</p>
+        <label class="sort">Sort <select id="sort" aria-label="Sort games">
+          ${[["name", "Name A–Z"], ["price-asc", "Price: low to high"], ["price-desc", "Price: high to low"]]
+            .map(([v, l]) => `<option value="${v}" ${ui.sort === v ? "selected" : ""}>${l}</option>`).join("")}
+        </select></label></div>
       ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : q && ui.filter === "all" && !ui.tags.length ? "" : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
       ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}
       ${q ? searchExtras(ui.query.trim(), list.length) : ""}`;
@@ -360,6 +375,13 @@
     else if (!found && !away.length && !foreign.length && !filtered) html += `<p class="hint">No exhibitor matches “${esc(query)}” either.</p>`;
     return html;
   }
+
+  const priceOf = g => {
+    const p = Number(g.price);
+    if (g.price != null && g.price !== "" && Number.isFinite(p) && p > 0) return p;
+    const m = String(g.priceBand || "").match(/\d+(?:[.,]\d+)?/);
+    return m ? Number(m[0].replace(",", ".")) : null;
+  };
 
   function gameCard(g) {
     const plan = myPlan();
@@ -1108,6 +1130,7 @@
 
   document.addEventListener("change", e => {
     const t = e.target;
+    if (t.id === "sort") { ui.sort = t.value; ui.limit = PAGE; render(); return; }
     if (t.id === "visit-day" && ui.sheetGame) {
       const n = nextFreeStart(db.currentMember, $("#visit-day").value, Number($("#visit-len").value));
       if (n != null) $("#visit-start").value = fmt(n);
