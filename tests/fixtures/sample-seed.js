@@ -30,6 +30,15 @@ window.SPIEL_SEED = {
 
   tags: ["Engine building", "Drafting", "Tile laying", "Co-op", "Dice", "Puzzle", "Card game", "2 players", "6+ players", "Long (2h+)"],
 
+  exhibitors: [
+    { name: "Flatout Games", hall: "3", booth: "3-A100" },
+    { name: "TLAMA games", hall: "2", booth: "2-C145", more: ["2-C150"] }
+  ],
+  notAtFair: [
+    { name: "Firesiege", publisher: "Deer Games Studio", why: "Not on SPIEL's novelty list.", url: "https://example.com/firesiege" },
+    { name: "Gloomy Gardens", publisher: "Nobody Games", src: "bgg" }
+  ],
+
   // Sample games so the app isn't empty on first launch. Booths and session
   // times are placeholders: replace them with real ones once the hall plan
   // is out, or delete them from the Settings tab.

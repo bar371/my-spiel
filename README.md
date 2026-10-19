@@ -99,6 +99,12 @@ The shared list comes from two sources plus hand-picked games:
 3. **33 picks from preview articles** (`preview: true`, each linking to its source), kept as written; the sources only fill
    their empty fields, except the booth, which the official list always sets.
 
+Searching tells three cases apart: the game is in the list; we know it but it isn't expected at SPIEL (**🚫 Known, but
+not expected at SPIEL**, with the reason: `SPIEL_SEED.notAtFair`, from BGG listings without any stand and from
+`MANUAL_NOT_AT_FAIR` in the importer); or none of the sources know it (**🤷 We don't know …**). Search also lists matching
+exhibitors from SPIEL's official exhibitor list (`SPIEL_SEED.exhibitors`) with their stands, so a publisher's name tells
+you whether they're at the fair.
+
 Demo times are unpublished, so add them with **Edit game** in the app (shared with the crew when sync is on) or in this file.
 
 To refresh the list, run the **Import SPIEL games** workflow (Actions tab), or locally `node tools/import-games.js`
@@ -115,7 +121,7 @@ The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
 
-`tests/e2e.js` drives the app in headless Chromium through 98 checks: player pick, search and filters,
+`tests/e2e.js` drives the app in headless Chromium through 106 checks: player pick, search and filters,
 join, leave and clashes, add, edit and delete, notes, budget maths, share-link import, backup and restore,
 offline mode, and layout from 320px to desktop.
 

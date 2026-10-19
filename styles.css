@@ -379,3 +379,12 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 .fav-btn.big.on { background: #fff0c4; color: #7a5a00; box-shadow: 0 3px 0 #e0b84a; }
 .pill.fav { background: #fff6d8; color: #7a5a00; border-color: #f0d27a; }
 .fact small.also { text-transform: none; letter-spacing: 0; font-weight: 700; margin-top: 2px; }
+
+/* ---------- Search beyond the list ---------- */
+.not-at-fair { border-left: 6px solid #b9a17a; }
+.not-at-fair p.small { margin: 6px 0 10px; color: var(--ink-soft); }
+.unknown-game p.small { margin: 6px 0 12px; color: var(--ink-soft); }
+.exhibitors { padding: 6px 14px; }
+.exhibitor { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; }
+.exhibitor + .exhibitor { border-top: 1px solid var(--line); }
+.exhibitor b { flex: 1 1 140px; font-family: var(--font-head); font-weight: 600; }

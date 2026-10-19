@@ -34,7 +34,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(!(await p.isVisible('#sheet')), 'Escape closes switch sheet');
 
   console.log('Countdown & days');
-  ok(/6 days to go/.test(await text('#countdown')), 'countdown: ' + await text('#countdown'));
+  { const d = Math.ceil((new Date('2026-10-22T10:00:00') - new Date()) / 864e5); ok(new RegExp(d > 0 ? `${d} days? to go` : 'Day|SPIEL|next year').test(await text('#countdown')), 'countdown: ' + await text('#countdown')); }
   ok(await p.locator('.day').count() === 3, '3 day tiles (Thu–Sat)');
   ok(!(await text('#days')).includes('Sun'), 'no Sunday tile');
   ok((await text('.view')).includes('Nothing planned'), 'empty state on schedule');
@@ -78,6 +78,23 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await p.click('[data-tag="Card game"]');
   await p.fill('#search', 'engine building');
   ok(await p.locator('.game-card').count() === 1 && (await text('.game-card')).includes('Ark Nova'), 'search matches tags');
+  await p.fill('#search', '');
+
+  console.log('Search: not at SPIEL / unknown / exhibitors');
+  await p.fill('#search', 'firesiege');
+  ok(await p.locator('.game-card').count() === 0 && (await text('.view')).includes('Known, but not expected at SPIEL') && (await text('.not-at-fair')).includes('Deer Games Studio'), 'known game that is not at SPIEL is explained');
+  ok(await p.locator('.unknown-game').count() === 0, 'not reported as unknown');
+  await p.fill('#search', 'gloomy');
+  ok((await text('.not-at-fair')).includes("BoardGameGeek's SPIEL preview"), 'BGG-only listing gets the standard reason');
+  await p.fill('#search', 'zorblax');
+  ok((await text('.unknown-game')).includes('We don’t know') || (await text('.unknown-game')).includes("We don't know"), 'unknown game is said to be unknown');
+  ok((await text('.view')).includes('No exhibitor matches'), 'and no exhibitor matches');
+  await p.click('.unknown-game [data-action="new"]');
+  ok(await p.inputValue('[name=name]') === 'zorblax', 'add-it-yourself prefills the name'); await close();
+  await p.fill('#search', 'tlama');
+  ok((await text('.exhibitors')).includes('TLAMA games') && (await text('.exhibitors')).includes('Hall 2 · C145') && (await text('.exhibitors')).includes('2-C150'), 'exhibitor search shows the stand');
+  await p.fill('#search', 'cascadia');
+  ok(await p.locator('.game-card').count() === 1 && await p.locator('.unknown-game').count() === 0, 'a found game is not reported unknown');
   await p.fill('#search', '');
 
   console.log('Favorites');
