@@ -315,7 +315,7 @@
       <div class="row" style="margin-bottom:8px">${chips}</div>
       ${tagChips ? `<div class="tag-row" role="group" aria-label="Filter by game type">${ui.tags.length ? `<button class="btn small tag-chip clear" data-action="tags-clear">✕ Clear</button>` : `<span class="tag-label">🏷 Type</span>`}${tagChips}</div>` : ""}
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
-      ${nPreview && !ui.query && !ui.tags.length ? `<div class="banner">📰 ${games().length} SPIEL 2026 games: SPIEL's official novelty list (✅), BoardGameGeek's SPIEL preview, and ${nPreview} hyped picks from preview articles (marked <b>preview</b>). Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
+      ${nPreview && !ui.query && !ui.tags.length ? `<div class="banner">📰 ${games().length} SPIEL 2026 games: SPIEL's official novelty list (✅), BoardGameGeek's SPIEL preview, and ${nPreview} hyped picks from preview articles (marked <b>preview</b>). Only English, Dutch and language-independent editions are listed; German-only and other editions show up when you search for them. Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
       <p class="muted small" style="color:var(--paper);opacity:.8;margin:0 4px 8px">${list.length} game${list.length === 1 ? "" : "s"}</p>
       ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : q && ui.filter === "all" && !ui.tags.length ? "" : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
       ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}
@@ -326,12 +326,16 @@
   // Three answers to "is X at SPIEL?": it's in the list above; we know it but it isn't
   // expected at the fair (SEED.notAtFair, with the reason); or none of our sources know it.
   // Exhibitors matching the search are listed too, so a publisher name tells you whether they have a stand.
+  const LANG_NAMES = { en: "English", de: "German", nl: "Dutch", fr: "French", es: "Spanish", it: "Italian", pl: "Polish", cs: "Czech",
+    ja: "Japanese", ko: "Korean", zh: "Chinese", sv: "Swedish", fi: "Finnish", no: "Norwegian", da: "Danish", el: "Greek", pt: "Portuguese", any: "Language-independent" };
+  const langNames = langs => (langs || []).map(l => LANG_NAMES[l] || l).join(", ");
   const fold = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
   const BGG_NO_BOOTH = "In BoardGameGeek's SPIEL preview, but neither the game nor its publisher has a stand on SPIEL's official exhibitor list.";
   function searchExtras(query, found) {
     const q = fold(query);
     if (q.length < 2) return "";
     const away = (SEED.notAtFair || []).filter(x => fold(`${x.name} ${x.publisher || ""}`).includes(q)).slice(0, 12);
+    const foreign = (SEED.otherLanguage || []).filter(x => fold(`${x.name} ${x.publisher || ""}`).includes(q));
     const exhibitors = (SEED.exhibitors || []).filter(x => fold(x.name).includes(q)).slice(0, 8);
     const filtered = ui.filter !== "all" || ui.tags.length;
     let html = "";
@@ -343,13 +347,17 @@
         <div class="row">${url ? `<a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">🔗 More info</a>` : ""}
           <button class="btn secondary small" data-action="new" data-name="${esc(x.name)}">＋ Add anyway</button></div></div>`;
     }).join("");
-    if (!found && !away.length && !filtered) html += `<div class="card unknown-game"><h3 class="game-name">🤷 We don't know “${esc(query)}”</h3>
+    if (foreign.length) html += `<h2 class="section-title">🌍 Only in other languages</h2><div class="card exhibitors foreign">` +
+      foreign.slice(0, 12).map(x => `<div class="exhibitor"><b>${esc(x.name)}</b><span class="pill">${esc(langNames(x.langs))} only</span>
+        ${x.hall || x.booth ? `<span class="pill">🏛 ${esc(hallText(x))}</span>` : ""}${x.publisher ? `<span class="small muted">${esc(x.publisher)}</span>` : ""}</div>`).join("") +
+      (foreign.length > 12 ? `<p class="small muted">…and ${foreign.length - 12} more. Search more precisely to see them.</p>` : "") + `</div>`;
+    if (!found && !away.length && !foreign.length && !filtered) html += `<div class="card unknown-game"><h3 class="game-name">🤷 We don't know “${esc(query)}”</h3>
       <p class="small">It isn't on SPIEL's official novelty list, in BoardGameGeek's SPIEL preview or among our preview picks,
       so there's no sign it will be shown at SPIEL. The novelty list only has new games, though: older games are often still for sale at a stand.</p>
       <button class="btn small" data-action="new" data-name="${esc(query)}">＋ Add “${esc(query)}” yourself</button></div>`;
     if (exhibitors.length) html += `<h2 class="section-title">🏢 Exhibitors</h2><div class="card exhibitors">` + exhibitors.map(x =>
       `<div class="exhibitor"><b>${esc(x.name)}</b><span class="pill">🏛 ${esc([x.hall && `Hall ${x.hall}`, x.booth && x.hall && x.booth.startsWith(x.hall + "-") ? x.booth.slice(x.hall.length + 1) : x.booth].filter(Boolean).join(" · "))}</span>${(x.more || []).length ? `<span class="small muted">also ${esc(x.more.join(", "))}</span>` : ""}</div>`).join("") + `</div>`;
-    else if (!found && !away.length && !filtered) html += `<p class="hint">No exhibitor matches “${esc(query)}” either.</p>`;
+    else if (!found && !away.length && !foreign.length && !filtered) html += `<p class="hint">No exhibitor matches “${esc(query)}” either.</p>`;
     return html;
   }
 
@@ -581,6 +589,7 @@
         <div class="fact"><small>Play time</small><b>${esc(g.duration || "?")}</b></div>
         <div class="fact"><small>Fair price</small><b>${g.price ? eur.format(g.price) : g.priceBand ? esc(g.priceBand) : "?"}</b></div>
       </div>
+      ${(g.langs || []).length ? `<p class="small muted langs">🌍 ${esc(langNames(g.langs))}</p>` : ""}
       ${g.description ? `<p class="desc">${esc(g.description)}</p>` : ""}
       ${url ? `<p><a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">🔗 ${g.preview ? "Source" : "Game page"}</a>
         <a class="btn secondary small" href="https://boardgamegeek.com/geeksearch.php?action=search&amp;objecttype=boardgame&amp;q=${encodeURIComponent(g.name)}" target="_blank" rel="noopener">🎲 BoardGameGeek</a></p>` : ""}

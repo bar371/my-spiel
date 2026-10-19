@@ -91,6 +91,8 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok((await text('.view')).includes('No exhibitor matches'), 'and no exhibitor matches');
   await p.click('.unknown-game [data-action="new"]');
   ok(await p.inputValue('[name=name]') === 'zorblax', 'add-it-yourself prefills the name'); await close();
+  await p.fill('#search', 'kaskadien');
+  ok((await text('.foreign')).includes('German only') && (await text('.foreign')).includes('Hall 7 · E311') && await p.locator('.unknown-game').count() === 0, 'German-only edition shows under other languages, not as unknown');
   await p.fill('#search', 'tlama');
   ok((await text('.exhibitors')).includes('TLAMA games') && (await text('.exhibitors')).includes('Hall 2 · C145') && (await text('.exhibitors')).includes('2-C150'), 'exhibitor search shows the stand');
   await p.fill('#search', 'cascadia');
@@ -156,6 +158,7 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await close();
   await p.click('[data-game="cascadia"]');
   ok((await text('#sheet-body')).includes('also at 7-E100'), 'sheet lists other booths');
+  ok((await text('#sheet-body')).includes('English, German'), 'sheet lists languages');
   await p.click('[data-action="edit"]'); await p.fill('[name=players]', '1–4'); await p.click('#game-form button[type=submit]');
   { const c = (await db()).customGames.find(g => g.id === 'cascadia'); ok(c.spiel === 101 && c.otherBooths[0] === '7-E100' && c.players === '1–4', 'editing keeps official-list fields'); }
   await close();

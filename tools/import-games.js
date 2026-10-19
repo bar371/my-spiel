@@ -338,8 +338,9 @@ function write(seed, games, total, extra = {}) {
   const tagLine = `  tags: ${fmt(TAG_ORDER)},\n`;
   let withTags = /\n  tags: \[.*\],\n/.test(head) ? head.replace(/\n  tags: \[.*\],\n/, "\n" + tagLine) : head + tagLine + "\n";
   // Lists for search: SPIEL's exhibitors, and games we know of that aren't expected at the fair
-  withTags = withTags.replace(/(?:  \/\/.*\n)*  (?:exhibitors|notAtFair): \[\n[\s\S]*?\n  \],\n\n?/g, "");
+  withTags = withTags.replace(/(?:  \/\/.*\n)*  (?:exhibitors|notAtFair|otherLanguage): \[\n[\s\S]*?\n  \],\n\n?/g, "");
   if (extra.exhibitors) withTags += `  // SPIEL's official exhibitor list, for search\n  exhibitors: [\n${extra.exhibitors.map(x => "    " + fmt(x)).join(",\n")}\n  ],\n\n`;
+  if (extra.otherLanguage) withTags += `  // Novelties on SPIEL's list only in languages the crew doesn't play (mostly German editions), for search\n  otherLanguage: [\n${extra.otherLanguage.map(x => "    " + fmt(x)).join(",\n")}\n  ],\n\n`;
   if (extra.notAtFair) withTags += `  // Games we know of that aren't expected at SPIEL (src "bgg": in BGG's SPIEL preview, but\n  // neither the game nor its publisher has a stand on the official exhibitor list)\n  notAtFair: [\n${extra.notAtFair.map(x => "    " + fmt(x)).join(",\n")}\n  ],\n\n`;
   const out = withTags +
 `  // Built by tools/import-games.js: ${total.spiel} games from SPIEL's official novelty list
@@ -393,6 +394,16 @@ const OFFICIAL_TAGS = {
   "card game": "Card game", "solo game": "Solo", "beginner": "Beginner", "connoisseur": "Connoisseur", "expert": "Expert"
 };
 
+// Official language names → short codes; "Other" means language-independent (accessories etc.)
+const LANG_CODES = { English: "en", German: "de", Dutch: "nl", French: "fr", Spanish: "es", Italian: "it", Polish: "pl", Czech: "cs",
+  Japanese: "ja", Korean: "ko", "Mandarin/Chinese": "zh", Swedish: "sv", Finnish: "fi", Norwegian: "no", Danish: "da", Greek: "el",
+  Portuguese: "pt", Other: "any" };
+// Editions the crew can play: English, Dutch, or language-independent. Others (mostly German-only
+// editions) stay out of the game list and are only shown when searched for.
+const PLAYABLE_LANGS = ["en", "nl", "any"];
+// Titles that give a German edition away: umlauts, common German words, or a leading "Die "
+const GERMAN_TITLE = /[äöüß]|\b(und|der|das|des|dem|den|ein|eine|einer|für|mit|vom|zum|zur|spiel|spiele|erweiterung|abenteuer|nicht|auf|aus|bei|wer|wie|was|ist)\b|^die\s/i;
+
 // "Hall 3" + "3G200" → { hall: "3", booth: "3-G200" }; "Galeria" stays as it is
 const officialBooth = (hall, stand) => {
   const h = String(hall || "").replace(/^hall\s*/i, "").trim();
@@ -430,6 +441,8 @@ function officialGame(p, exById, themes) {
   const priceFrom = pick(/^BYPRICE_/);
   const names = th.map(id => themes[id]).filter(Boolean).map(n => n.toLowerCase());
   const extra = names.map(n => OFFICIAL_TAGS[n]).filter(Boolean);
+  const langs = [...new Set(th.filter(t => /^LANGUAGE\./.test(t)).map(t => LANG_CODES[themes[t]] || "any"))]
+    .sort((a, b) => (a === "en" ? -1 : b === "en" ? 1 : a.localeCompare(b)));
   const authors = f.authors || f.author;
   const desc = [authors && authors !== "-" && `By ${authors}.`, description].filter(Boolean).join(" ");
   const g = {
@@ -445,6 +458,7 @@ function officialGame(p, exById, themes) {
     price: pr ? num(pr[0]) : undefined,
     priceBand: !pr && priceFrom !== undefined ? `€${priceFrom}–${priceFrom + 10}` : undefined,
     url: p.WEB || undefined,
+    langs: langs.length ? langs : undefined,
     description: desc ? clip(strip(desc), 320) : undefined,
     sessions: []
   };
@@ -457,10 +471,16 @@ function officialGame(p, exById, themes) {
 
 function mergeOfficial(games, data, skippedBgg = []) {
   const exById = new Map(data.exhibitors.map(e => [String(e.ID), e]));
-  const official = data.products.map(p => officialGame(p, exById, data.themes)).filter(o => o.name);
+  const all = data.products.map(p => officialGame(p, exById, data.themes)).filter(o => o.name);
+  const playable = o => !o.langs || o.langs.some(l => PLAYABLE_LANGS.includes(l));
+  const official = all.filter(playable);
+  // Editions only in other languages (mostly German): searchable, but not in the game list
+  const otherLanguage = all.filter(o => !playable(o)).map(o => ({ name: o.name, publisher: o.publisher, langs: o.langs, hall: o.hall, booth: o.booth }))
+    .map(x => { Object.keys(x).forEach(k => x[k] === undefined && delete x[k]); return x; })
+    .sort((a, b) => a.name.localeCompare(b.name));
   // Earlier official-only entries are rebuilt; matched games get their official fields again
   const base = games.filter(g => g.preview || g.bgg !== undefined || g.spiel === undefined);
-  base.forEach(g => { delete g.spiel; delete g.otherBooths; delete g.priceBand; });
+  base.forEach(g => { delete g.spiel; delete g.otherBooths; delete g.priceBand; delete g.langs; });
   const keys = name => { const n = norm(name), b = norm(bare(name)); return [...new Set([n, b, n.replace(/\b\d+\b/g, " ").replace(/\s+/g, " ").trim()])]; };
   const index = new Map();
   base.forEach(g => keys(g.name).forEach(k => { if (!index.has(k)) index.set(k, []); index.get(k).push(g); }));
@@ -475,7 +495,7 @@ function mergeOfficial(games, data, skippedBgg = []) {
       delete g.boothFrom;
       if (!g.booth) delete g.booth;
       if (!g.hall) delete g.hall;
-      for (const k of ["otherBooths", "players", "duration", "price", "priceBand", "url", "description", "publisher"])
+      for (const k of ["otherBooths", "langs", "players", "duration", "price", "priceBand", "url", "description", "publisher"])
         if (o[k] !== undefined && (g[k] === undefined || g[k] === "")) g[k] = o[k];
       if (g.price !== undefined) delete g.priceBand;
       if (o.tags) g.tags = sortTags([...(g.tags || []), ...o.tags]);
@@ -519,7 +539,14 @@ function mergeOfficial(games, data, skippedBgg = []) {
     } else notAtFair.push({ name: b.name, publisher: b.publisher, src: "bgg", url: b.url });
   });
   added.sort((a, b) => a.name.localeCompare(b.name));
-  return { games: [...base, ...added], matched, added: added.length, official: official.length, fixed, rescued, notAtFair };
+  // BGG has no language field, but lists German editions under German titles: move those
+  // to the other-languages list too
+  const isGermanEdition = g => g.spiel === undefined && !g.preview && g.bgg !== undefined && GERMAN_TITLE.test(g.name);
+  const result = [...base, ...added];
+  result.filter(isGermanEdition).forEach(g => otherLanguage.push(Object.fromEntries(Object.entries(
+    { name: g.name, publisher: g.publisher, langs: ["de"], hall: g.hall, booth: g.booth }).filter(([, v]) => v !== undefined))));
+  otherLanguage.sort((a, b) => a.name.localeCompare(b.name));
+  return { games: result.filter(g => !isGermanEdition(g)), matched, added: added.length, official: official.length, fixed, rescued, notAtFair, otherLanguage };
 }
 
 const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -554,9 +581,9 @@ const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? proce
   }).filter(e => e.name).map(e => { Object.keys(e).forEach(k => e[k] === undefined && delete e[k]); return e; })
     .sort((a, b) => a.name.localeCompare(b.name));
   bggAdded = games.filter(g => g.bgg !== undefined && !g.preview && g.spiel === undefined).length;
-  write(seed, games, { spiel: games.filter(g => g.spiel !== undefined).length, bgg: bggAdded }, { exhibitors, notAtFair });
+  write(seed, games, { spiel: games.filter(g => g.spiel !== undefined).length, bgg: bggAdded }, { exhibitors, notAtFair, otherLanguage: o.otherLanguage });
   const tagCount = {};
   games.forEach(g => (g.tags || []).forEach(t => { tagCount[t] = (tagCount[t] || 0) + 1; }));
   console.log("Tags:", JSON.stringify(tagCount), "| untagged:", games.filter(g => !(g.tags || []).length).length);
-  console.log(`SPIEL list: ${o.official} novelties, ${o.matched} matched to games already listed, ${o.added} added; official exhibitor booth for ${o.fixed} BGG games, ${o.rescued} BGG listings back in via their publisher's stand; ${notAtFair.length} known but not expected at SPIEL; ${exhibitors.length} exhibitors. Total ${games.length}.`);
+  console.log(`SPIEL list: ${o.official} novelties in English/Dutch/language-independent (${o.otherLanguage.length} only in other languages left out), ${o.matched} matched to games already listed, ${o.added} added; official exhibitor booth for ${o.fixed} BGG games, ${o.rescued} BGG listings back in via their publisher's stand; ${notAtFair.length} known but not expected at SPIEL; ${exhibitors.length} exhibitors. Total ${games.length}.`);
 })().catch(e => { console.error(e); process.exit(1); });
