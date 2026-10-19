@@ -317,8 +317,40 @@
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
       ${nPreview && !ui.query && !ui.tags.length ? `<div class="banner">📰 ${games().length} SPIEL 2026 games: SPIEL's official novelty list (✅), BoardGameGeek's SPIEL preview, and ${nPreview} hyped picks from preview articles (marked <b>preview</b>). Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
       <p class="muted small" style="color:var(--paper);opacity:.8;margin:0 4px 8px">${list.length} game${list.length === 1 ? "" : "s"}</p>
-      ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
-      ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}`;
+      ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : q && ui.filter === "all" && !ui.tags.length ? "" : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
+      ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}
+      ${q ? searchExtras(ui.query.trim(), list.length) : ""}`;
+  }
+
+  // ---------- Search beyond the game list ----------
+  // Three answers to "is X at SPIEL?": it's in the list above; we know it but it isn't
+  // expected at the fair (SEED.notAtFair, with the reason); or none of our sources know it.
+  // Exhibitors matching the search are listed too, so a publisher name tells you whether they have a stand.
+  const fold = s => String(s || "").toLowerCase().normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+  const BGG_NO_BOOTH = "In BoardGameGeek's SPIEL preview, but neither the game nor its publisher has a stand on SPIEL's official exhibitor list.";
+  function searchExtras(query, found) {
+    const q = fold(query);
+    if (q.length < 2) return "";
+    const away = (SEED.notAtFair || []).filter(x => fold(`${x.name} ${x.publisher || ""}`).includes(q)).slice(0, 12);
+    const exhibitors = (SEED.exhibitors || []).filter(x => fold(x.name).includes(q)).slice(0, 8);
+    const filtered = ui.filter !== "all" || ui.tags.length;
+    let html = "";
+    if (away.length) html += `<h2 class="section-title">🚫 Known, but not expected at SPIEL</h2>` + away.map(x => {
+      const url = safeUrl(x.url);
+      return `<div class="card not-at-fair"><h3 class="game-name">${esc(x.name)}</h3>
+        ${x.publisher ? `<p class="muted small" style="margin:2px 0 0">${esc(x.publisher)}</p>` : ""}
+        <p class="small">${esc(x.why || (x.src === "bgg" ? BGG_NO_BOOTH : ""))}</p>
+        <div class="row">${url ? `<a class="btn secondary small" href="${esc(url)}" target="_blank" rel="noopener">🔗 More info</a>` : ""}
+          <button class="btn secondary small" data-action="new" data-name="${esc(x.name)}">＋ Add anyway</button></div></div>`;
+    }).join("");
+    if (!found && !away.length && !filtered) html += `<div class="card unknown-game"><h3 class="game-name">🤷 We don't know “${esc(query)}”</h3>
+      <p class="small">It isn't on SPIEL's official novelty list, in BoardGameGeek's SPIEL preview or among our preview picks,
+      so there's no sign it will be shown at SPIEL. The novelty list only has new games, though: older games are often still for sale at a stand.</p>
+      <button class="btn small" data-action="new" data-name="${esc(query)}">＋ Add “${esc(query)}” yourself</button></div>`;
+    if (exhibitors.length) html += `<h2 class="section-title">🏢 Exhibitors</h2><div class="card exhibitors">` + exhibitors.map(x =>
+      `<div class="exhibitor"><b>${esc(x.name)}</b><span class="pill">🏛 ${esc([x.hall && `Hall ${x.hall}`, x.booth && x.hall && x.booth.startsWith(x.hall + "-") ? x.booth.slice(x.hall.length + 1) : x.booth].filter(Boolean).join(" · "))}</span>${(x.more || []).length ? `<span class="small muted">also ${esc(x.more.join(", "))}</span>` : ""}</div>`).join("") + `</div>`;
+    else if (!found && !away.length && !filtered) html += `<p class="hint">No exhibitor matches “${esc(query)}” either.</p>`;
+    return html;
   }
 
   function gameCard(g) {
@@ -610,8 +642,8 @@
     </div>`;
   }
 
-  function editSheet(id) {
-    const g = id ? gameById(id) : { name: "", sessions: [] };
+  function editSheet(id, name = "") {
+    const g = id ? gameById(id) : { name, sessions: [] };
     openSheet(`<h2 id="sheet-title">${id ? "Edit game" : "Add a game"}</h2>
       <form id="game-form" data-id="${esc(id || "")}">
         <label class="field">Name<input name="name" required value="${esc(g.name)}" placeholder="e.g. Cascadia"></label>
@@ -986,7 +1018,7 @@
       case "unbuy": delete plan.buy[gid]; touch(db.currentMember); render(); refreshSheet(); break;
       case "bought": plan.buy[gid].bought = !plan.buy[gid].bought; touch(db.currentMember); render(); refreshSheet(); break;
       case "prio": plan.buy[gid].prio = plan.buy[gid].prio === "must" ? "maybe" : "must"; touch(db.currentMember); render(); break;
-      case "new": editSheet(null); break;
+      case "new": editSheet(null, el.dataset.name); break;
       case "edit": editSheet(gid); break;
       case "add-session": {
         const list = $("#sess-list");

@@ -117,6 +117,16 @@ const KEEP_WITHOUT_BOOTH = [
   474854  // Agent Avenue: Four Seasons (Nerdlab Games)
 ];
 
+// Games people asked about that we looked into and found no sign of at SPIEL 2026
+const MANUAL_NOT_AT_FAIR = [
+  { name: "Firesiege", publisher: "Deer Games Studio",
+    why: "Not on SPIEL's novelty list, and Deer Games isn't an exhibitor. The game shipped to Kickstarter backers in early 2026; TLAMA games (Hall 2 · C145) sells the English edition in its web shop, so ask there.",
+    url: "https://www.tlamagames.com/en/board-games/firesiege-en" },
+  { name: "Dungeon Crawler Carl: Unstoppable", publisher: "Renegade Game Studios",
+    why: "Not on SPIEL's novelty list, and Renegade isn't an exhibitor. Shops list it for late November 2026.",
+    url: "https://renegadegamestudios.com/blog/renegade-game-studios-announces-two-upcoming-dungeon-crawler-carl-tabletop-games/" }
+];
+
 // Hand-picked tags, by game id, for games the rules above miss
 const MANUAL_TAGS = {
   "8-dragons": ["Set collection"],
@@ -236,6 +246,7 @@ function merge(seed, bggGames) {
   const bggTags = new Map();
   const added = [];
   let enriched = 0, skipped = 0, inferred = 0;
+  const skippedList = [];
   // The same game can be listed more than once (several publishers or editions): combine them
   const byId = new Map();
   bggGames.forEach(b => {
@@ -287,7 +298,7 @@ function merge(seed, bggGames) {
     if (!b.hall && !b.booth) {
       const pb = publisherBooth(b);
       if (pb) { Object.assign(b, pb, { boothFrom: "publisher" }); inferred++; }
-      else if (!KEEP_WITHOUT_BOOTH.includes(b.bgg)) { skipped++; continue; }
+      else if (!KEEP_WITHOUT_BOOTH.includes(b.bgg)) { skipped++; skippedList.push(b); continue; }
     }
     let id = slug(b.name) || b.id;
     if (ids.has(id)) id = b.id;
@@ -310,7 +321,7 @@ function merge(seed, bggGames) {
     if (t.length) g.tags = t; else delete g.tags;
   });
   added.sort((a, b) => a.name.localeCompare(b.name));
-  return { games: [...kept, ...added], added: added.length, enriched, kept: kept.length, unique: unique.length, skipped, inferred };
+  return { games: [...kept, ...added], added: added.length, enriched, kept: kept.length, unique: unique.length, skipped, inferred, skippedList };
 }
 
 // Same style as the hand-written entries: {"id": "x", "name": "Y", …}
@@ -318,14 +329,18 @@ const fmt = v => Array.isArray(v) ? `[${v.map(fmt).join(", ")}]`
   : v && typeof v === "object" ? `{${Object.entries(v).map(([k, x]) => `${JSON.stringify(k)}: ${fmt(x)}`).join(", ")}}`
   : JSON.stringify(v);
 
-function write(seed, games, total) {
+function write(seed, games, total, extra = {}) {
   const src = fs.readFileSync(DATA, "utf8");
-  const head = src.replace(/\n(?:  \/\/.*\n)*  games: \[[\s\S]*$/, "\n");
+  let head = src.replace(/\n(?:  \/\/.*\n)*  games: \[[\s\S]*$/, "\n");
   if (head === src) throw new Error("could not find the games list in " + DATA);
   const nPreview = games.filter(g => g.preview).length;
   // Order of the tag filter chips in the app
   const tagLine = `  tags: ${fmt(TAG_ORDER)},\n`;
-  const withTags = /\n  tags: \[.*\],\n/.test(head) ? head.replace(/\n  tags: \[.*\],\n/, "\n" + tagLine) : head + tagLine + "\n";
+  let withTags = /\n  tags: \[.*\],\n/.test(head) ? head.replace(/\n  tags: \[.*\],\n/, "\n" + tagLine) : head + tagLine + "\n";
+  // Lists for search: SPIEL's exhibitors, and games we know of that aren't expected at the fair
+  withTags = withTags.replace(/(?:  \/\/.*\n)*  (?:exhibitors|notAtFair): \[\n[\s\S]*?\n  \],\n\n?/g, "");
+  if (extra.exhibitors) withTags += `  // SPIEL's official exhibitor list, for search\n  exhibitors: [\n${extra.exhibitors.map(x => "    " + fmt(x)).join(",\n")}\n  ],\n\n`;
+  if (extra.notAtFair) withTags += `  // Games we know of that aren't expected at SPIEL (src "bgg": in BGG's SPIEL preview, but\n  // neither the game nor its publisher has a stand on the official exhibitor list)\n  notAtFair: [\n${extra.notAtFair.map(x => "    " + fmt(x)).join(",\n")}\n  ],\n\n`;
   const out = withTags +
 `  // Built by tools/import-games.js: ${total.spiel} games from SPIEL's official novelty list
   // (spiel: <id>, with the official hall and booth), ${total.bgg} more from BoardGameGeek's SPIEL 2026
@@ -440,7 +455,7 @@ function officialGame(p, exById, themes) {
   return g;
 }
 
-function mergeOfficial(games, data) {
+function mergeOfficial(games, data, skippedBgg = []) {
   const exById = new Map(data.exhibitors.map(e => [String(e.ID), e]));
   const official = data.products.map(p => officialGame(p, exById, data.themes)).filter(o => o.name);
   // Earlier official-only entries are rebuilt; matched games get their official fields again
@@ -471,24 +486,45 @@ function mergeOfficial(games, data) {
     ids.add(id);
     added.push({ ...o, id });
   }
+  // The stand of a publisher ("Feuerland Spiele / Capstone Games") on the official exhibitor list
+  const exByName = new Map(data.exhibitors.map(e => [norm(e.NAME), e]));
+  const exhibitorBooth = publisher => {
+    const pubs = String(publisher || "").split(" / ").map(norm).filter(Boolean);
+    const ex = pubs.map(p => exByName.get(p) || [...exByName.entries()].find(([n]) => n.startsWith(p + " ") || p.startsWith(n + " "))?.[1]).find(Boolean);
+    if (!ex) return null;
+    const b = officialBooth((ex.STAENDE[0] || [])[0] || ex.HALLE, (ex.STAENDE[0] || [])[1] || ex.STAND);
+    return b.booth ? b : null;
+  };
   // BGG-only games whose booth was guessed from the publisher's other BGG listings:
   // use the publisher's stand from the official exhibitor list instead
-  const exByName = new Map(data.exhibitors.map(e => [norm(e.NAME), e]));
   let fixed = 0;
   base.filter(g => g.spiel === undefined && g.boothFrom === "publisher").forEach(g => {
-    const pubs = String(g.publisher || "").split(" / ").map(norm);
-    const ex = pubs.map(p => exByName.get(p) || [...exByName.entries()].find(([n]) => n.startsWith(p + " ") || p.startsWith(n + " "))?.[1]).find(Boolean);
-    if (!ex) return;
-    const b = officialBooth((ex.STAENDE[0] || [])[0] || ex.HALLE, (ex.STAENDE[0] || [])[1] || ex.STAND);
-    if (b.booth) { Object.assign(g, b); fixed++; }
+    const b = exhibitorBooth(g.publisher);
+    if (b) { Object.assign(g, b); fixed++; }
+  });
+  // BGG listings without any booth: back in when their publisher exhibits, otherwise
+  // remembered as "known, but not expected at SPIEL"
+  let rescued = 0;
+  const notAtFair = [];
+  skippedBgg.forEach(b => {
+    const known = keys(b.name).some(k => (index.get(k) || []).length) || official.some(o => norm(o.name) === norm(b.name));
+    if (known) return;
+    const booth = exhibitorBooth(b.publisher);
+    if (booth) {
+      let id = slug(b.name) || b.id;
+      if (ids.has(id)) id = b.id;
+      ids.add(id);
+      added.push({ ...b, ...booth, boothFrom: "publisher", id });
+      rescued++;
+    } else notAtFair.push({ name: b.name, publisher: b.publisher, src: "bgg", url: b.url });
   });
   added.sort((a, b) => a.name.localeCompare(b.name));
-  return { games: [...base, ...added], matched, added: added.length, official: official.length, fixed };
+  return { games: [...base, ...added], matched, added: added.length, official: official.length, fixed, rescued, notAtFair };
 }
 
 const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
 (async () => {
-  let seed = loadSeed(), games = seed.games, bggAdded = games.filter(g => g.bgg !== undefined && !g.preview && g.spiel === undefined).length;
+  let seed = loadSeed(), games = seed.games, skippedBgg = null, bggAdded = games.filter(g => g.bgg !== undefined && !g.preview && g.spiel === undefined).length;
   if (!process.argv.includes("--skip-bgg")) {
     try {
       const raw = arg("--bgg") ? JSON.parse(fs.readFileSync(arg("--bgg"), "utf8")) : await fetchItems();
@@ -497,6 +533,7 @@ const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? proce
       if (!bggGames.length) throw new Error(`no games parsed from ${items.length} preview items`);
       const r = merge(seed, bggGames);
       games = r.games;
+      skippedBgg = r.skippedList;
       console.log(`BGG preview: ${items.length} items, ${r.unique} games. Kept ${r.kept}, enriched ${r.enriched}, added ${r.added}, booth taken from the publisher for ${r.inferred}, skipped ${r.skipped} without any hall or booth.`);
     } catch (e) {
       // Keep the BGG games from the last run rather than failing the whole import
@@ -504,12 +541,22 @@ const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? proce
     }
   }
   const data = arg("--spiel") ? JSON.parse(fs.readFileSync(arg("--spiel"), "utf8")) : await fetchSpiel();
-  const o = mergeOfficial(games, data);
+  const o = mergeOfficial(games, data, skippedBgg || []);
   games = o.games;
+  // Without a fresh BGG run, keep the BGG part of the last "not at the fair" list
+  const notAtFair = [...(skippedBgg ? o.notAtFair : (seed.notAtFair || []).filter(x => x.src === "bgg")), ...MANUAL_NOT_AT_FAIR]
+    .map(x => { const y = { ...x }; Object.keys(y).forEach(k => (y[k] === undefined || y[k] === "") && delete y[k]); return y; })
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const exhibitors = data.exhibitors.map(e => {
+    const stands = [...new Set((e.STAENDE.length ? e.STAENDE : [[e.HALLE, e.STAND]]).map(([h, n]) => officialBooth(h, n).booth).filter(Boolean))];
+    const b = officialBooth((e.STAENDE[0] || [])[0] || e.HALLE, (e.STAENDE[0] || [])[1] || e.STAND);
+    return { name: strip(e.NAME), hall: b.hall, booth: stands[0], more: stands.length > 1 ? stands.slice(1) : undefined };
+  }).filter(e => e.name).map(e => { Object.keys(e).forEach(k => e[k] === undefined && delete e[k]); return e; })
+    .sort((a, b) => a.name.localeCompare(b.name));
   bggAdded = games.filter(g => g.bgg !== undefined && !g.preview && g.spiel === undefined).length;
-  write(seed, games, { spiel: games.filter(g => g.spiel !== undefined).length, bgg: bggAdded });
+  write(seed, games, { spiel: games.filter(g => g.spiel !== undefined).length, bgg: bggAdded }, { exhibitors, notAtFair });
   const tagCount = {};
   games.forEach(g => (g.tags || []).forEach(t => { tagCount[t] = (tagCount[t] || 0) + 1; }));
   console.log("Tags:", JSON.stringify(tagCount), "| untagged:", games.filter(g => !(g.tags || []).length).length);
-  console.log(`SPIEL list: ${o.official} novelties, ${o.matched} matched to games already listed, ${o.added} added; official exhibitor booth for ${o.fixed} BGG games. Total ${games.length}.`);
+  console.log(`SPIEL list: ${o.official} novelties, ${o.matched} matched to games already listed, ${o.added} added; official exhibitor booth for ${o.fixed} BGG games, ${o.rescued} BGG listings back in via their publisher's stand; ${notAtFair.length} known but not expected at SPIEL; ${exhibitors.length} exhibitors. Total ${games.length}.`);
 })().catch(e => { console.error(e); process.exit(1); });
