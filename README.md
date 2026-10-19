@@ -99,7 +99,7 @@ The shared list comes from two sources plus hand-picked games:
 3. **33 picks from preview articles** (`preview: true`, each linking to its source), kept as written; the sources only fill
    their empty fields, except the booth, which the official list always sets.
 
-Only editions the crew can play are listed: English, Dutch or language-independent (`langs` on each official game).
+Only English editions are listed (plus language-independent ones such as accessories) (`langs` on each official game).
 Editions only in other languages, mostly German, are kept in `SPIEL_SEED.otherLanguage` and show up under
 **🌍 Only in other languages** when you search for them. BGG has no language field, so BGG listings with a German
 title (`GERMAN_TITLE` in the importer) go there too.
