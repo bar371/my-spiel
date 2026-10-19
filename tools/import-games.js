@@ -398,9 +398,9 @@ const OFFICIAL_TAGS = {
 const LANG_CODES = { English: "en", German: "de", Dutch: "nl", French: "fr", Spanish: "es", Italian: "it", Polish: "pl", Czech: "cs",
   Japanese: "ja", Korean: "ko", "Mandarin/Chinese": "zh", Swedish: "sv", Finnish: "fi", Norwegian: "no", Danish: "da", Greek: "el",
   Portuguese: "pt", Other: "any" };
-// Editions the crew can play: English, Dutch, or language-independent. Others (mostly German-only
+// Editions the crew can play: English or language-independent. Others (mostly German-only
 // editions) stay out of the game list and are only shown when searched for.
-const PLAYABLE_LANGS = ["en", "nl", "any"];
+const PLAYABLE_LANGS = ["en", "any"];
 // Titles that give a German edition away: umlauts, common German words, or a leading "Die "
 const GERMAN_TITLE = /[äöüß]|\b(und|der|das|des|dem|den|ein|eine|einer|für|mit|vom|zum|zur|spiel|spiele|erweiterung|abenteuer|nicht|auf|aus|bei|wer|wie|was|ist)\b|^die\s/i;
 
@@ -585,5 +585,5 @@ const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? proce
   const tagCount = {};
   games.forEach(g => (g.tags || []).forEach(t => { tagCount[t] = (tagCount[t] || 0) + 1; }));
   console.log("Tags:", JSON.stringify(tagCount), "| untagged:", games.filter(g => !(g.tags || []).length).length);
-  console.log(`SPIEL list: ${o.official} novelties in English/Dutch/language-independent (${o.otherLanguage.length} only in other languages left out), ${o.matched} matched to games already listed, ${o.added} added; official exhibitor booth for ${o.fixed} BGG games, ${o.rescued} BGG listings back in via their publisher's stand; ${notAtFair.length} known but not expected at SPIEL; ${exhibitors.length} exhibitors. Total ${games.length}.`);
+  console.log(`SPIEL list: ${o.official} novelties in English or language-independent (${o.otherLanguage.length} only in other languages left out), ${o.matched} matched to games already listed, ${o.added} added; official exhibitor booth for ${o.fixed} BGG games, ${o.rescued} BGG listings back in via their publisher's stand; ${notAtFair.length} known but not expected at SPIEL; ${exhibitors.length} exhibitors. Total ${games.length}.`);
 })().catch(e => { console.error(e); process.exit(1); });
