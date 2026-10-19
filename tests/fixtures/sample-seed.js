@@ -70,6 +70,8 @@ window.SPIEL_SEED = {
     },
     {
       id: "ark-nova",
+      rating: 8.5,
+      votes: 52000,
       preview: true,
       tags: ["Engine building", "Card game", "Long (2h+)"],
       sample: true,
@@ -109,6 +111,8 @@ window.SPIEL_SEED = {
     },
     {
       id: "sky-team",
+      rating: 8.0,
+      votes: 9000,
       tags: ["Co-op", "Dice", "2 players"],
       sample: true,
       name: "Sky Team",

@@ -119,14 +119,14 @@ Every game has `tags` for the type filter in the Games tab (Engine building, Dec
 PvP / conflict, Co-op, Trick-taking, Party, Solo, Quick, Beginner / Connoisseur / Expert, …; the chip order is
 `SPIEL_SEED.tags`). The importer derives them from the official mechanisms, categories and level, from BGG's
 mechanics, categories and subdomains, from keywords in the description, and from `MANUAL_TAGS` in
-`tools/import-games.js`. Selecting several tags shows games that have all of them. The list can be sorted by name or by price (low to high or high to low; games without a price come last). Three extra chips come first:
+`tools/import-games.js`. Selecting several tags shows games that have all of them. The list can be sorted by name, by price (low to high or high to low; games without a price come last) or by BGG rating. Games with a BoardGameGeek id show BGG's average user rating (⭐, `rating` and `votes`), but only when at least `MIN_VOTES` (30) people rated them; the importer fetches it from BGG's game-stats endpoint and keeps the last ratings if BGG doesn't answer. Three extra chips come first:
 **✅ SPIEL list**, **📰 Preview** (the preview-article games) and **🎲 Demo slot** (games with at least one demo session,
 including ones added in the app). Tags can also be changed per game with **Edit game**.
 The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
 
-`tests/e2e.js` drives the app in headless Chromium through 112 checks: player pick, search and filters,
+`tests/e2e.js` drives the app in headless Chromium through 115 checks: player pick, search and filters,
 join, leave and clashes, add, edit and delete, notes, budget maths, share-link import, backup and restore,
 offline mode, and layout from 320px to desktop.
 
