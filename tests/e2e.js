@@ -109,6 +109,11 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok((await order()).startsWith(asc.slice().reverse().join(',')), 'price high to low: ' + await order());
   await p.reload(); await tab('games');
   ok(await p.inputValue('#sort') === 'price-desc', 'sort choice kept after reload');
+  await p.selectOption('#sort', 'rating');
+  ok((await order()).startsWith('Ark Nova,Sky Team'), 'BGG rating: best first, unrated last: ' + await order());
+  ok((await text('.game-card[data-game="ark-nova"]')).includes('⭐ 8.5') && !(await text('.game-card[data-game="heat"]')).includes('⭐'), 'rating pill only on rated games');
+  await p.click('[data-game="ark-nova"]');
+  ok((await text('#sheet-body')).includes('8.5 / 10 on BoardGameGeek · 52,000 ratings'), 'sheet shows rating and votes'); await close();
   await p.selectOption('#sort', 'name');
   ok((await order()) === (await order()).split(',').slice().sort((a, b) => a.localeCompare(b)).join(','), 'back to name order');
 

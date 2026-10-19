@@ -395,3 +395,6 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 .list-head p { margin: 0; color: var(--paper); opacity: .8; }
 .list-head .sort { color: var(--paper); font-size: .85rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
 .list-head select { font: inherit; font-size: .85rem; padding: 5px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
+.pill.rating { background: #fff6d8; color: #7a5a00; border-color: #f0d27a; }
+.rating-line { margin: 8px 2px 0; color: var(--ink-soft); }
+.rating-line b { color: var(--ink); }

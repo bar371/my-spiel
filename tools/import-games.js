@@ -557,6 +557,50 @@ function mergeOfficial(games, data, skippedBgg = []) {
   return { games: result.filter(g => !isGermanEdition(g)), matched, added: added.length, official: official.length, fixed, rescued, notAtFair, otherLanguage, nonGames: nonGames.length };
 }
 
+// ---------- BGG user ratings ----------
+// The average user rating, only when enough people rated the game to mean something
+const MIN_VOTES = 30;
+const bggIdOf = g => g.bgg || Number((String(g.url || "").match(/boardgamegeek\.com\/boardgame(?:expansion)?\/(\d+)/) || [])[1]) || undefined;
+
+async function fetchRatings(ids) {
+  const out = new Map();
+  let failed = 0;
+  const queue = [...new Set(ids)];
+  const worker = async () => {
+    while (queue.length) {
+      const id = queue.shift();
+      for (let attempt = 0; attempt < 4; attempt++) {
+        try {
+          const res = await fetch(`https://api.geekdo.com/api/dynamicinfo?objectid=${id}&objecttype=thing`,
+            { headers: { "User-Agent": "my-spiel planner importer (github.com/bar371/my-spiel)", Accept: "application/json" } });
+          if (res.ok) {
+            const st = ((await res.json()).item || {}).stats || {};
+            out.set(id, { votes: Number(st.usersrated) || 0, rating: Number(st.average) || 0 });
+            break;
+          }
+          if (![429, 500, 502, 503, 504].includes(res.status)) { failed++; break; }
+        } catch (_) { /* retry */ }
+        if (attempt === 3) failed++;
+        await new Promise(r => setTimeout(r, 2000 * 2 ** attempt));
+      }
+      await new Promise(r => setTimeout(r, 250));
+    }
+  };
+  await Promise.all([worker(), worker(), worker()]);
+  return { ratings: out, failed };
+}
+
+function applyRatings(games, ratings, previous) {
+  let rated = 0;
+  games.forEach(g => {
+    delete g.rating; delete g.votes;
+    const id = bggIdOf(g);
+    const r = id && (ratings.get(id) || previous.get(id));
+    if (r && r.votes >= MIN_VOTES && r.rating > 0) { g.rating = Math.round(r.rating * 10) / 10; g.votes = r.votes; rated++; }
+  });
+  return rated;
+}
+
 const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
 (async () => {
   let seed = loadSeed(), games = seed.games, skippedBgg = null, bggAdded = games.filter(g => g.bgg !== undefined && !g.preview && g.spiel === undefined).length;
@@ -589,6 +633,12 @@ const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? proce
   }).filter(e => e.name).map(e => { Object.keys(e).forEach(k => e[k] === undefined && delete e[k]); return e; })
     .sort((a, b) => a.name.localeCompare(b.name));
   bggAdded = games.filter(g => g.bgg !== undefined && !g.preview && g.spiel === undefined).length;
+  // BGG ratings: fresh when BGG answers, otherwise the ones from the last run
+  const previous = new Map(seed.games.filter(g => g.rating).map(g => [bggIdOf(g), { rating: g.rating, votes: g.votes }]));
+  let ratings = new Map(), failedRatings = 0;
+  if (!process.argv.includes("--skip-bgg")) ({ ratings, failed: failedRatings } = await fetchRatings(games.map(bggIdOf).filter(Boolean)));
+  const rated = applyRatings(games, ratings, previous);
+  console.log(`BGG ratings: ${ratings.size} fetched (${failedRatings} failed), ${rated} games with at least ${MIN_VOTES} votes.`);
   write(seed, games, { spiel: games.filter(g => g.spiel !== undefined).length, bgg: bggAdded }, { exhibitors, notAtFair, otherLanguage: o.otherLanguage });
   const tagCount = {};
   games.forEach(g => (g.tags || []).forEach(t => { tagCount[t] = (tagCount[t] || 0) + 1; }));
