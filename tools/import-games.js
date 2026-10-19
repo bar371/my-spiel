@@ -161,11 +161,17 @@ const sortTags = tags => [...new Set(tags)].sort((a, b) => TAG_ORDER.indexOf(a) 
 const bounds = s => { const n = String(s || "").match(/\d+(?:\.\d+)?/g) || []; return /up to/i.test(s) ? [undefined, n[0]] : [n[0], n[1] || n[0]]; };
 const bggStats = { linkKeys: {}, names: {} };
 
+// Things that aren't games: playmats, sleeves, card albums and deck boxes, dice sets, gaming
+// tables, component upgrades… (official list: also the "Game accessories" category)
+const NON_GAME = /\b(play ?mats?|game ?mats?|neoprene|sleeves?|deck ?box(es)?|deck pods?|card ?case|card holder|cardport|cards' shuttle|albums?|binders?|storage|organi[sz]ers?|inserts?|box bands?|sidekick|squire|bastion|(soft |dyna)?crate|life counter|dice (sets?|trays?|bags?)|dice towers?(?! sponsored)|polyhedral|\d+ ?sided dice|metal dice|gaming ?tables?|game ?tables?|brettspieltisch|tisch-erweiterung|table ?toppers?|posters?|terrain markers?|upgraded? components|upgrade (kit|pack)|deluxe upgrade|token sets?|coin sets?|playbits?|gm screen|game master screen|paint sets?|card stands?|card racks?|carrying case)\b/i;
+const isNonGame = (name, accessory) => NON_GAME.test(name) || (accessory && !/\bexpansion\b/i.test(name));
+
 function toGame(it) {
   const gi = (it.geekitem && (it.geekitem.item || it.geekitem)) || it.item || {};
   const objectid = first(it.objectid, gi.objectid, gi.id);
   const name = strip(first(gi.name, gi.primaryname && gi.primaryname.name, it.name, it.title));
   if (!name || !objectid) return null;
+  if ([].concat(gi.subtypes || []).includes("boardgameaccessory") || isNonGame(name)) return null;
 
   const pubs = [];
   (Array.isArray(it.publishers) ? it.publishers : []).forEach(p => pubs.push(first(p.item && p.item.name, p.name)));
@@ -472,10 +478,12 @@ function officialGame(p, exById, themes) {
 function mergeOfficial(games, data, skippedBgg = []) {
   const exById = new Map(data.exhibitors.map(e => [String(e.ID), e]));
   const all = data.products.map(p => officialGame(p, exById, data.themes)).filter(o => o.name);
-  const playable = o => !o.langs || o.langs.some(l => PLAYABLE_LANGS.includes(l));
+  const accessories = new Set(data.products.filter(p => (p.THEMEN || []).some(t => data.themes[t] === "Game accessories")).map(p => Number(p.ID) || String(p.ID)));
+  const nonGames = all.filter(o => isNonGame(o.name, accessories.has(o.spiel)));
+  const playable = o => !isNonGame(o.name, accessories.has(o.spiel)) && (!o.langs || o.langs.some(l => PLAYABLE_LANGS.includes(l)));
   const official = all.filter(playable);
   // Editions only in other languages (mostly German): searchable, but not in the game list
-  const otherLanguage = all.filter(o => !playable(o)).map(o => ({ name: o.name, publisher: o.publisher, langs: o.langs, hall: o.hall, booth: o.booth }))
+  const otherLanguage = all.filter(o => !playable(o) && !nonGames.includes(o)).map(o => ({ name: o.name, publisher: o.publisher, langs: o.langs, hall: o.hall, booth: o.booth }))
     .map(x => { Object.keys(x).forEach(k => x[k] === undefined && delete x[k]); return x; })
     .sort((a, b) => a.name.localeCompare(b.name));
   // Earlier official-only entries are rebuilt; matched games get their official fields again
@@ -546,7 +554,7 @@ function mergeOfficial(games, data, skippedBgg = []) {
   result.filter(isGermanEdition).forEach(g => otherLanguage.push(Object.fromEntries(Object.entries(
     { name: g.name, publisher: g.publisher, langs: ["de"], hall: g.hall, booth: g.booth }).filter(([, v]) => v !== undefined))));
   otherLanguage.sort((a, b) => a.name.localeCompare(b.name));
-  return { games: result.filter(g => !isGermanEdition(g)), matched, added: added.length, official: official.length, fixed, rescued, notAtFair, otherLanguage };
+  return { games: result.filter(g => !isGermanEdition(g)), matched, added: added.length, official: official.length, fixed, rescued, notAtFair, otherLanguage, nonGames: nonGames.length };
 }
 
 const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? process.argv[i + 1] : undefined; };
@@ -585,5 +593,5 @@ const arg = name => { const i = process.argv.indexOf(name); return i > 0 ? proce
   const tagCount = {};
   games.forEach(g => (g.tags || []).forEach(t => { tagCount[t] = (tagCount[t] || 0) + 1; }));
   console.log("Tags:", JSON.stringify(tagCount), "| untagged:", games.filter(g => !(g.tags || []).length).length);
-  console.log(`SPIEL list: ${o.official} novelties in English or language-independent (${o.otherLanguage.length} only in other languages left out), ${o.matched} matched to games already listed, ${o.added} added; official exhibitor booth for ${o.fixed} BGG games, ${o.rescued} BGG listings back in via their publisher's stand; ${notAtFair.length} known but not expected at SPIEL; ${exhibitors.length} exhibitors. Total ${games.length}.`);
+  console.log(`SPIEL list: ${o.official} novelties in English or language-independent (${o.otherLanguage.length} only in other languages and ${o.nonGames} accessories left out), ${o.matched} matched to games already listed, ${o.added} added; official exhibitor booth for ${o.fixed} BGG games, ${o.rescued} BGG listings back in via their publisher's stand; ${notAtFair.length} known but not expected at SPIEL; ${exhibitors.length} exhibitors. Total ${games.length}.`);
 })().catch(e => { console.error(e); process.exit(1); });
