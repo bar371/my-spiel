@@ -99,6 +99,11 @@ The shared list comes from two sources plus hand-picked games:
 3. **33 picks from preview articles** (`preview: true`, each linking to its source), kept as written; the sources only fill
    their empty fields, except the booth, which the official list always sets.
 
+Only editions the crew can play are listed: English, Dutch or language-independent (`langs` on each official game).
+Editions only in other languages, mostly German, are kept in `SPIEL_SEED.otherLanguage` and show up under
+**🌍 Only in other languages** when you search for them. BGG has no language field, so BGG listings with a German
+title (`GERMAN_TITLE` in the importer) go there too.
+
 Searching tells three cases apart: the game is in the list; we know it but it isn't expected at SPIEL (**🚫 Known, but
 not expected at SPIEL**, with the reason: `SPIEL_SEED.notAtFair`, from BGG listings without any stand and from
 `MANUAL_NOT_AT_FAIR` in the importer); or none of the sources know it (**🤷 We don't know …**). Search also lists matching

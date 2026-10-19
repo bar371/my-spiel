@@ -388,3 +388,4 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 .exhibitor { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 0; }
 .exhibitor + .exhibitor { border-top: 1px solid var(--line); }
 .exhibitor b { flex: 1 1 140px; font-family: var(--font-head); font-weight: 600; }
+.langs { margin: 4px 2px 0; }

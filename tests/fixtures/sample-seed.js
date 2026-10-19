@@ -34,7 +34,10 @@ window.SPIEL_SEED = {
     { name: "Flatout Games", hall: "3", booth: "3-A100" },
     { name: "TLAMA games", hall: "2", booth: "2-C145", more: ["2-C150"] }
   ],
-  notAtFair: [
+  otherLanguage: [
+    { name: "Kaskadien", publisher: "Kosmos", langs: ["de"], hall: "7", booth: "7-E311" }
+  ],
+    notAtFair: [
     { name: "Firesiege", publisher: "Deer Games Studio", why: "Not on SPIEL's novelty list.", url: "https://example.com/firesiege" },
     { name: "Gloomy Gardens", publisher: "Nobody Games", src: "bgg" }
   ],
@@ -45,6 +48,7 @@ window.SPIEL_SEED = {
   games: [
     {
       id: "cascadia",
+      langs: ["en", "de"],
       spiel: 101,
       otherBooths: ["7-E100"],
       tags: ["Drafting", "Tile laying", "Puzzle"],
