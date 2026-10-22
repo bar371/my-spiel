@@ -24,7 +24,9 @@ window.SPIEL_SEED = {
     { id: "sjord",    name: "Sjoerd",   color: "#d64545" },
     { id: "annemieke", name: "Annemieke", color: "#3a7bd5" },
     { id: "bar",      name: "Bar",      color: "#e8b22d" },
-    { id: "naomi",    name: "Naomi",    color: "#3f9c5a" }
+    { id: "naomi",    name: "Naomi",    color: "#3f9c5a" },
+    { id: "elena",    name: "Elena",    color: "#8e5bd0" },
+    { id: "ties",     name: "Ties",     color: "#e0782f" }
   ],
 
   tags: ["Engine building", "Deck building", "Worker placement", "Drafting", "Tile laying", "Set collection", "Area control", "PvP / conflict", "Co-op", "Trick-taking", "Bluffing & deduction", "Push your luck", "Roll & write", "Dice", "Negotiation & auctions", "Real-time", "Puzzle", "Abstract", "Party", "Family", "Economic", "Adventure & campaign", "Racing", "Dexterity", "Card game", "Solo", "2 players", "6+ players", "Quick (≤30 min)", "Long (2h+)", "Expansion", "Beginner", "Connoisseur", "Expert"],
