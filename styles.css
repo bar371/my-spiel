@@ -398,3 +398,13 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 .pill.rating { background: #fff6d8; color: #7a5a00; border-color: #f0d27a; }
 .rating-line { margin: 8px 2px 0; color: var(--ink-soft); }
 .rating-line b { color: var(--ink); }
+
+/* ---------- Shared budgets ---------- */
+.pot-members .player { position: relative; cursor: pointer; padding: 10px; }
+.pot-members .player svg { width: 40px; height: 40px; }
+.pot-members input { position: absolute; opacity: 0; pointer-events: none; }
+.pot-members .player:has(input:checked) { border-color: var(--accent); background: #fff8e1; }
+.pot-members .player:has(input:not(:checked)) { opacity: .6; }
+.check.readonly { opacity: .7; cursor: default; }
+.pot-select { display: block; margin: 6px 0 0 auto; max-width: 130px; font: inherit; font-size: .75rem; padding: 3px 6px; border-radius: 8px; border: 1px solid var(--line); background: #fff; color: var(--ink); }
+.section-title .btn.small { font-family: var(--font-body); text-shadow: none; }

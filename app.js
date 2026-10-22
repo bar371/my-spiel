@@ -9,6 +9,8 @@
  *     plans{memberId}          { sessions[], visits[], favs[gameId], buy{gameId:{price,prio,bought}}, budget, notes{}, updatedAt }
  *                              visits are booth visits planned without a demo session:
  *                              { id, game, day, start, end }
+ *     pots[]                   shared budgets: { id, name, members[], budget, updatedAt, deleted? };
+ *                              a buy-list item with { pot: id } is paid from that pot
  *     crewCode                 shared crew id for live sync (see data/sync-config.js)
  *
  * Live sync: with a crew code set, every phone mirrors the crew's plans, added
@@ -36,6 +38,7 @@
     db.currentMember = db.currentMember || null;
     db.customGames = Array.isArray(db.customGames) ? db.customGames : [];
     db.hiddenGames = Array.isArray(db.hiddenGames) ? db.hiddenGames : [];
+    db.pots = Array.isArray(db.pots) ? db.pots : [];
     db.plans = db.plans || {};
     let migrated = false;
     Object.entries(RENAMED).forEach(([from, to]) => {
@@ -458,21 +461,24 @@
       <div class="crew-grid">${cards}</div>`;
   }
 
-  function viewBudget() {
-    const plan = myPlan();
-    const items = Object.entries(plan.buy).map(([id, b]) => ({ id, b, g: gameById(id) })).filter(x => x.g)
-      .sort((a, b) => (a.b.bought - b.b.bought) || ((a.b.prio === "must" ? 0 : 1) - (b.b.prio === "must" ? 0 : 1)) || a.g.name.localeCompare(b.g.name));
-    const bought = items.filter(x => x.b.bought).reduce((t, x) => t + (+x.b.price || 0), 0);
-    const must = items.filter(x => !x.b.bought && x.b.prio === "must").reduce((t, x) => t + (+x.b.price || 0), 0);
-    const maybe = items.filter(x => !x.b.bought && x.b.prio !== "must").reduce((t, x) => t + (+x.b.price || 0), 0);
-    const budget = +plan.budget || 0;
-    const left = budget - bought;
-    const scale = Math.max(budget, bought + must, 1);
+  // ---------- Budgets: personal, and shared pots (e.g. Bar & Naomi) ----------
+  const pots = () => db.pots.filter(p => !p.deleted);
+  const potsOf = memberId => pots().filter(p => p.members.includes(memberId));
+  // The pot an item is paid from, if it still exists and its owner is in it
+  const potFor = (b, memberId) => b && b.pot ? potsOf(memberId).find(p => p.id === b.pot) : null;
+  const byPrio = (a, b) => (a.b.bought - b.b.bought) || ((a.b.prio === "must" ? 0 : 1) - (b.b.prio === "must" ? 0 : 1)) || a.g.name.localeCompare(b.g.name);
+  const personalItems = memberId => Object.entries(db.plans[memberId].buy).filter(([, b]) => !potFor(b, memberId))
+    .map(([id, b]) => ({ id, b, g: gameById(id), m: member(memberId) })).filter(x => x.g).sort(byPrio);
+  const potItems = pot => pot.members.filter(member).flatMap(mid => Object.entries(db.plans[mid].buy).filter(([, b]) => b.pot === pot.id)
+    .map(([id, b]) => ({ id, b, g: gameById(id), m: member(mid) }))).filter(x => x.g).sort(byPrio);
+  const potLabel = p => p.name || p.members.map(id => (member(id) || {}).name).filter(Boolean).join(" & ");
 
-    return `<h2 class="section-title">💰 ${esc(me().name)}'s budget</h2>
-      <div class="card budget-head">
-        <label class="muted small">Budget for the fair&nbsp;
-          <input class="inline" id="budget" type="number" inputmode="decimal" min="0" step="5" value="${budget || ""}" placeholder="€ 0"></label>
+  function budgetCard(budget, items, input) {
+    const sum = f => items.filter(f).reduce((t, x) => t + (+x.b.price || 0), 0);
+    const bought = sum(x => x.b.bought), must = sum(x => !x.b.bought && x.b.prio === "must"), maybe = sum(x => !x.b.bought && x.b.prio !== "must");
+    const left = budget - bought, scale = Math.max(budget, bought + must, 1);
+    return `<div class="card budget-head">
+        <label class="muted small">Budget for the fair&nbsp;${input}</label>
         <div class="coins ${left < 0 ? "over" : ""}">${eur.format(left)}</div>
         <div class="muted small">${left < 0 ? "over budget" : "left to spend"}</div>
         <div class="bar"><span class="bought" style="width:${bought / scale * 100}%"></span><span class="planned" style="width:${must / scale * 100}%"></span></div>
@@ -480,17 +486,76 @@
           <span><i style="background:var(--accent)"></i>Must-have ${eur.format(must)}</span>
           <span><i style="background:var(--paper-2)"></i>Maybe ${eur.format(maybe)}</span></div>
         ${budget && bought + must > budget ? `<p class="pill warn" style="margin-top:10px">⚠ Must-haves go ${eur.format(bought + must - budget)} over budget</p>` : ""}
-      </div>
+      </div>`;
+  }
+
+  // Your own items can be ticked off, re-prioritised and moved between budgets; others' items in a shared budget are shown read-only
+  function buyRow({ id, b, g, m }, showWho) {
+    const mine = m.id === db.currentMember;
+    const mp = potsOf(db.currentMember);
+    return `<div class="card buy-row ${b.bought ? "done" : ""}">
+        ${mine ? `<button class="check ${b.bought ? "on" : ""}" data-action="bought" data-game="${esc(id)}" aria-label="Mark bought">${b.bought ? "✓" : ""}</button>`
+          : `<span class="check readonly ${b.bought ? "on" : ""}" title="${esc(m.name)}'s item">${b.bought ? "✓" : ""}</span>`}
+        <div class="tap" data-action="open" data-game="${esc(id)}"><h3 class="game-name">${esc(g.name)}</h3>
+          <div class="meta">${showWho ? `${meeple(m.color, 'style="width:16px;height:16px"')}<span class="small">${esc(m.name)}</span>` : ""}${hallPill(g)}</div></div>
+        <div style="text-align:right"><div class="price">${eur.format(+b.price || 0)}</div>
+          ${mine ? `<button class="prio ${b.prio === "must" ? "must" : "maybe"}" data-action="prio" data-game="${esc(id)}">${b.prio === "must" ? "must-have" : "maybe"}</button>`
+            : `<span class="prio ${b.prio === "must" ? "must" : "maybe"}">${b.prio === "must" ? "must-have" : "maybe"}</span>`}
+          ${mine && mp.length ? `<select class="pot-select" data-pot-for="${esc(id)}" aria-label="Pay from">
+            <option value="">Personal</option>${mp.map(p => `<option value="${esc(p.id)}" ${b.pot === p.id ? "selected" : ""}>${esc(potLabel(p))}</option>`).join("")}</select>` : ""}</div>
+      </div>`;
+  }
+
+  function viewBudget() {
+    const plan = myPlan();
+    const items = personalItems(db.currentMember);
+    const budget = +plan.budget || 0;
+    const mine = potsOf(db.currentMember);
+    const shared = mine.map(p => {
+      const its = potItems(p);
+      return `<h2 class="section-title">🤝 ${esc(potLabel(p))} <span class="pill">${meeples(p.members.map(member).filter(Boolean))}</span>
+          <button class="btn small secondary" data-action="pot-edit" data-pot="${esc(p.id)}" style="margin-left:auto">Edit</button></h2>
+        ${budgetCard(+p.budget || 0, its, `<input class="inline pot-budget" data-pot="${esc(p.id)}" type="number" inputmode="decimal" min="0" step="5" value="${+p.budget || ""}" placeholder="€ 0">`)}
+        ${its.length ? its.map(x => buyRow(x, true)).join("") : `<p class="hint">Nothing in this budget yet. On your shopping list, set <b>Pay from</b> to “${esc(potLabel(p))}”.</p>`}`;
+    }).join("");
+
+    return `<h2 class="section-title">💰 ${esc(me().name)}'s budget</h2>
+      ${budgetCard(budget, items, `<input class="inline" id="budget" type="number" inputmode="decimal" min="0" step="5" value="${budget || ""}" placeholder="€ 0">`)}
       <h2 class="section-title">🛒 Shopping list</h2>
-      ${items.length ? items.map(({ id, b, g }) => `<div class="card buy-row ${b.bought ? "done" : ""}">
-          <button class="check ${b.bought ? "on" : ""}" data-action="bought" data-game="${esc(id)}" aria-label="Mark bought">${b.bought ? "✓" : ""}</button>
-          <div class="tap" data-action="open" data-game="${esc(id)}"><h3 class="game-name">${esc(g.name)}</h3>
-            <div class="meta">${hallPill(g)}</div></div>
-          <div style="text-align:right"><div class="price">${eur.format(+b.price || 0)}</div>
-            <button class="prio ${b.prio === "must" ? "must" : "maybe"}" data-action="prio" data-game="${esc(id)}">${b.prio === "must" ? "must-have" : "maybe"}</button></div>
-        </div>`).join("")
+      ${items.length ? items.map(x => buyRow(x, false)).join("")
+        : Object.keys(plan.buy).length ? `<p class="hint">Everything on your list is paid from a shared budget.</p>`
         : `<div class="empty"><span class="big">🛍️</span><b>Your buy list is empty</b><p>Open a game and tap “Add to buy list”.</p>
-          <button class="btn" data-action="tab" data-tab="games">Browse games</button></div>`}`;
+          <button class="btn" data-action="tab" data-tab="games">Browse games</button></div>`}
+      ${shared}
+      <button class="btn secondary block" style="margin-top:16px" data-action="pot-new">🤝 New shared budget</button>`;
+  }
+
+  function potSheet(id) {
+    const p = id ? pots().find(x => x.id === id) : { name: "", members: [db.currentMember], budget: "" };
+    if (!p) return closeSheet();
+    openSheet(`<h2 id="sheet-title">${id ? "Edit shared budget" : "New shared budget"}</h2>
+      <p class="muted small">Items anyone in it puts on their buy list with <b>Pay from</b> set to this budget count towards it.</p>
+      <form id="pot-form" data-id="${esc(id || "")}">
+        <label class="field">Who's in it</label>
+        <div class="players pot-members">${MEMBERS.map(m => `<label class="player ${p.members.includes(m.id) ? "active" : ""}">
+          <input type="checkbox" name="members" value="${m.id}" ${p.members.includes(m.id) ? "checked" : ""} ${m.id === db.currentMember ? "disabled" : ""}>
+          ${meeple(m.color)}${esc(m.name)}</label>`).join("")}</div>
+        <label class="field">Name <input name="name" value="${esc(p.name || "")}" placeholder="e.g. Bar & Naomi"></label>
+        <label class="field">Budget (€)<input name="budget" type="number" inputmode="decimal" min="0" step="5" value="${esc(p.budget || "")}"></label>
+        <div class="row spread" style="margin-top:14px"><button class="btn" type="submit">${id ? "Save" : "Create"}</button>
+          ${id ? `<button type="button" class="btn danger small" data-action="pot-delete" data-pot="${esc(id)}">Delete</button>` : ""}</div>
+      </form>`);
+  }
+
+  function savePot(form) {
+    const f = new FormData(form);
+    const members = [db.currentMember, ...f.getAll("members").filter(m => m !== db.currentMember && member(m))];
+    if (members.length < 2) { toast("Pick at least one person to share with"); return; }
+    const id = form.dataset.id || uid("pot");
+    const old = db.pots.find(x => x.id === id) || {};
+    const pot = { ...old, id, members, name: String(f.get("name") || "").trim(), budget: Math.max(0, Number(f.get("budget")) || 0), updatedAt: Date.now() };
+    db.pots = db.pots.filter(x => x.id !== id).concat(pot);
+    save(); closeSheet(); render(); toast(form.dataset.id ? "Shared budget saved" : `Shared budget “${potLabel(pot)}” created`);
   }
 
   function viewSettings() {
@@ -646,6 +711,7 @@
       <div class="buybox">
         ${buy ? `<div class="grid2">
             <label class="field">Price (€)<input id="buy-price" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(buy.price ?? "")}"></label>
+            ${potsOf(db.currentMember).length ? `<label class="field">Pay from<select id="buy-pot"><option value="">Personal budget</option>${potsOf(db.currentMember).map(p => `<option value="${esc(p.id)}" ${buy.pot === p.id ? "selected" : ""}>${esc(potLabel(p))}</option>`).join("")}</select></label>` : ""}
             <label class="field">Priority<select id="buy-prio"><option value="must" ${buy.prio === "must" ? "selected" : ""}>Must-have</option><option value="maybe" ${buy.prio !== "must" ? "selected" : ""}>Maybe</option></select></label>
           </div>
           <div class="row spread"><button class="btn small ${buy.bought ? "secondary" : "green"}" data-action="bought" data-game="${esc(g.id)}">${buy.bought ? "↺ Not bought yet" : "✓ Mark as bought"}</button>
@@ -749,7 +815,7 @@
   const b64d = str => new TextDecoder().decode(Uint8Array.from(atob(str.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0)));
 
   async function sharePlan() {
-    const payload = { v: 1, m: db.currentMember, p: myPlan(), g: db.customGames, h: db.hiddenGames };
+    const payload = { v: 1, m: db.currentMember, p: myPlan(), g: db.customGames, h: db.hiddenGames, pots: db.pots };
     const url = `${location.origin}${location.pathname}#plan=${b64e(JSON.stringify(payload))}`;
     const text = `${me().name}'s SPIEL '26 plan`;
     try {
@@ -760,6 +826,19 @@
       if (e && e.name === "AbortError") return;
       openSheet(`<h2>Share link</h2><p class="muted">Copy this link and send it:</p><label class="field"><textarea readonly>${esc(url)}</textarea></label>`);
     }
+  }
+
+  const cleanPot = p => isObj(p) && typeof p.id === "string" && KEY_RE.test(p.id) ? {
+    id: p.id, name: typeof p.name === "string" ? p.name : "", members: asList(p.members).filter(m => typeof m === "string"),
+    budget: Math.max(0, Number(p.budget) || 0), updatedAt: +p.updatedAt || 0, ...(p.deleted ? { deleted: true } : {}) } : null;
+  // Newest version of each shared budget wins; true when something changed
+  function mergePots(incoming) {
+    let changed = false;
+    asList(incoming).map(cleanPot).filter(Boolean).forEach(p => {
+      const cur = db.pots.find(x => x.id === p.id);
+      if (!cur || p.updatedAt > (+cur.updatedAt || 0)) { db.pots = db.pots.filter(x => x.id !== p.id).concat(p); changed = true; }
+    });
+    return changed;
   }
 
   function mergeGames(incoming, hidden) {
@@ -870,6 +949,7 @@
       const cur = db.customGames.find(x => x.id === g.id);
       if (!cur || (+g.updatedAt || 0) > (+cur.updatedAt || 0)) { db.customGames = db.customGames.filter(x => x.id !== g.id).concat(cleanGame(g)); changed = true; }
     });
+    if (mergePots(isObj(r.pots) ? Object.values(r.pots) : [])) changed = true;
     const n = db.customGames.length;
     db.customGames = db.customGames.filter(g => !db.hiddenGames.includes(g.id));
     if (db.customGames.length !== n) changed = true;
@@ -891,6 +971,8 @@
       if (KEY_RE.test(g.id) && (!rg[g.id] || (+g.updatedAt || 0) > (+rg[g.id].updatedAt || 0))) put(`games/${g.id}`, g);
     });
     db.hiddenGames.forEach(id => { if (KEY_RE.test(id) && !rh[id]) put(`hidden/${id}`, true); });
+    const rpots = isObj(r.pots) ? r.pots : {};
+    db.pots.forEach(p => { if (KEY_RE.test(p.id) && (+p.updatedAt || 0) > (+(rpots[p.id] || {}).updatedAt || 0)) put(`pots/${p.id}`, p); });
   }
 
   function put(path, value) {
@@ -1014,6 +1096,15 @@
         touch(db.currentMember); render(); refreshSheet(); toast("Added to buy list");
         break;
       }
+      case "pot-new": potSheet(null); break;
+      case "pot-edit": potSheet(el.dataset.pot); break;
+      case "pot-delete": {
+        const p = db.pots.find(x => x.id === el.dataset.pot);
+        if (!p || !confirm(`Delete the shared budget “${potLabel(p)}”? Its items go back to everyone's personal budget.`)) return;
+        Object.assign(p, { deleted: true, updatedAt: Date.now() });
+        save(); closeSheet(); render(); toast("Shared budget deleted");
+        break;
+      }
       case "fav": {
         plan.favs = isFav(db.currentMember, gid) ? plan.favs.filter(id => id !== gid) : [...(plan.favs || []), gid];
         touch(db.currentMember); render(); refreshSheet();
@@ -1087,6 +1178,7 @@
         if (!data) return;
         db.plans[data.m] = cleanPlan(data.p);
         mergeGames(data.g, data.h);
+        mergePots(data.pots);
         save(); delete $("#sheet").dataset.pending; closeSheet();
         ui.tab = "crew"; render(); toast(`${member(data.m).name}'s plan imported`);
         break;
@@ -1136,6 +1228,19 @@
   document.addEventListener("change", e => {
     const t = e.target;
     if (t.id === "sort") { ui.sort = t.value; ui.limit = PAGE; render(); return; }
+    if (t.dataset.potFor || (t.id === "buy-pot" && ui.sheetGame)) {
+      const b = myPlan().buy[t.dataset.potFor || ui.sheetGame];
+      if (!b) return;
+      if (t.value) b.pot = t.value; else delete b.pot;
+      touch(db.currentMember); render(); if (t.id === "buy-pot") refreshSheet();
+      toast(t.value ? `Paid from ${potLabel(pots().find(p => p.id === t.value))}` : "Paid from your personal budget");
+      return;
+    }
+    if (t.classList.contains("pot-budget")) {
+      const p = db.pots.find(x => x.id === t.dataset.pot);
+      if (p) { p.budget = Math.max(0, Number(t.value) || 0); p.updatedAt = Date.now(); save(); render(); }
+      return;
+    }
     if (t.id === "visit-day" && ui.sheetGame) {
       const n = nextFreeStart(db.currentMember, $("#visit-day").value, Number($("#visit-len").value));
       if (n != null) $("#visit-start").value = fmt(n);
@@ -1217,6 +1322,7 @@
 
   document.addEventListener("submit", e => {
     if (e.target.id === "game-form") { e.preventDefault(); saveGameForm(e.target); }
+    if (e.target.id === "pot-form") { e.preventDefault(); savePot(e.target); }
     if (e.target.id === "crew-join") {
       e.preventDefault();
       const code = new FormData(e.target).get("code");

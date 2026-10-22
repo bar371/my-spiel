@@ -74,6 +74,15 @@ const norm = s => s.replace(/ /g, " ");
   await tab(B, "games"); await B.click('.game-card[data-game="heat"] .fav-btn');
   ok(await until(async () => { await tab(A, "crew"); const t = norm(await A.locator("#view").innerText()); return t.includes("Crew favorites") && t.includes("Heat"); }), "Bar sees Naomi's favorite");
 
+  console.log("Shared budget");
+  await tab(A, "budget"); await A.click('[data-action="pot-new"]');
+  await A.click('.pot-members input[value="naomi"]', { force: true });
+  await A.fill("#pot-form [name=budget]", "150"); await A.click("#pot-form button[type=submit]");
+  ok(await until(async () => { await tab(B, "budget"); return norm(await B.locator("#view").innerText()).includes("🤝 Bar & Naomi"); }), "Naomi sees the shared budget Bar created");
+  await tab(B, "games"); await B.click('[data-game="sky-team"]'); await B.click('#sheet-body [data-action="buy"]');
+  await B.selectOption("#buy-pot", { label: "Bar & Naomi" }); await B.click(".sheet-x");
+  ok(await until(async () => { await tab(A, "budget"); const t = norm(await A.locator("#view").innerText()); return t.includes("Sky Team") && t.includes("Naomi"); }), "Bar sees Naomi's item in the shared budget");
+
   console.log("Booth visits");
   await tab(B, "games"); await B.click('[data-game="sky-team"]');
   await B.selectOption("#visit-day", "2026-10-24"); await B.fill("#visit-start", "13:00"); await B.selectOption("#visit-len", "30");
