@@ -5,7 +5,7 @@ A small planner for our crew (Sjoerd, Annemieke, Bar and Naomi) at **SPIEL Essen
 
 - **My day**: a time grid of your day: demo sessions you've joined (fixed times 🔒) and booth visits you've planned. Drag a visit by its ⠿ grip to move it, or by its bottom edge to change its length (15-minute steps, mouse or touch). Clashes are outlined in red, and **Fix clashes** moves overlapping visits to the next free time.
 - **Games**: every game we're tracking with publisher, hall/booth, players, play time, price, description, a link, and its session times. Tap a game to join a demo session, **plan a booth visit** (any game, no demo needed: pick a day, start and length; it suggests your next free slot), add it to your buy list, or write notes.
-- **Favorites**: tap ☆ on any game to mark one you like, even if you won't plan it. **★ Favorites** filters the list, and the Crew tab shows the crew's favorites, most-liked first.
+- **Favorites**: tap ☆ on any game to mark one you like, even if you won't plan it. **★ Favorites** filters the list, and the **Hall** menu narrows it (or any other view) to one hall, with a count per hall. The Crew tab shows the crew's favorites, most-liked first.
 - **Crew**: *Who's going where*: day by day, every demo session and booth visit anyone has planned, with everyone's meeples and a 🤝 badge when you're going together. Updates live once crew sync is on.
 - **Budget**: set your budget, mark games must-have or maybe, tick them off when bought, and see what's left. **Shared budgets** (e.g. Bar & Naomi): create one with 🤝 **New shared budget**, then set **Pay from** on a buy-list item (on the Budget tab or in the game sheet). A shared budget counts everyone's items paid from it; your personal budget only counts the rest. Shared budgets sync with the crew.
 - **More**: switch player, share your plan, back up or restore, and install instructions.
@@ -126,7 +126,7 @@ The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
 
-`tests/e2e.js` drives the app in headless Chromium through 123 checks: player pick, search and filters,
+`tests/e2e.js` drives the app in headless Chromium through 128 checks: player pick, search and filters,
 join, leave and clashes, add, edit and delete, notes, budget maths, share-link import, backup and restore,
 offline mode, and layout from 320px to desktop.
 

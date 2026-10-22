@@ -124,6 +124,18 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok((await text('.game-card[data-game="sky-team"] .fav-btn')) === '★', 'card shows a filled star');
   await p.click('[data-filter="favs"]');
   ok(await p.locator('.game-card').count() === 1, 'Favorites filter');
+  await p.click('[data-filter="all"]'); await p.click('.game-card[data-game="heat"] .fav-btn'); await p.click('[data-filter="favs"]');
+  ok(await p.locator('.game-card').count() === 2, 'two favorites');
+  ok((await p.locator('#hall').innerText()).includes('Hall 6 (1)') && (await p.locator('#hall').innerText()).includes('TBD (1)'), 'hall menu counts the favorites per hall');
+  await p.selectOption('#hall', '6');
+  ok(await p.locator('.game-card').count() === 1 && (await text('.game-card')).includes('Sky Team'), 'favorites narrowed to Hall 6');
+  await p.reload(); await tab('games');
+  ok(await p.inputValue('#hall') === '6' && await p.locator('.game-card').count() === 1, 'filter and hall kept after reload');
+  await p.selectOption('#hall', ''); await p.click('[data-filter="all"]');
+  await p.click('.game-card[data-game="cascadia"] .fav-btn'); await p.selectOption('#hall', '7');
+  ok(await p.locator('.game-card').count() === 1 && (await text('.game-card')).includes('Cascadia'), "a game's extra booths count for their hall too");
+  await p.selectOption('#hall', ''); await p.click('.game-card[data-game="cascadia"] .fav-btn');
+  await p.click('.game-card[data-game="heat"] .fav-btn'); await p.click('[data-filter="favs"]');
   await p.click('[data-filter="all"]');
   await p.click('[data-game="heat"]'); await p.click('#sheet-body .fav-btn');
   ok((await db()).plans.sjord.favs.length === 2 && (await text('#sheet-body .fav-btn')).includes('Favorite'), 'favorite from the game sheet');

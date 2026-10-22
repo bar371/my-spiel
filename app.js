@@ -190,6 +190,7 @@
     filter: "all",
     tags: [],
     sort: "name",
+    hall: "",
     limit: PAGE,
     sheetGame: null
   };
@@ -197,7 +198,8 @@
   if (!DAYS.some(d => d.date === ui.day)) ui.day = DAYS[0].date;
   if (!Array.isArray(ui.tags)) ui.tags = [];
   if (!["name", "price-asc", "price-desc", "rating"].includes(ui.sort)) ui.sort = "name";
-  const keepUi = () => { try { sessionStorage.setItem("spiel26:ui", JSON.stringify({ tab: ui.tab, day: ui.day, filter: ui.filter, tags: ui.tags, sort: ui.sort })); } catch (_) {} };
+  if (typeof ui.hall !== "string") ui.hall = "";
+  const keepUi = () => { try { sessionStorage.setItem("spiel26:ui", JSON.stringify({ tab: ui.tab, day: ui.day, filter: ui.filter, tags: ui.tags, sort: ui.sort, hall: ui.hall })); } catch (_) {} };
 
   // ---------- Header ----------
   function renderHeader() {
@@ -302,6 +304,10 @@
     if (ui.filter === "favs") list = list.filter(g => isFav(db.currentMember, g.id));
     // Tags narrow the list: a game must have every selected tag
     list = list.filter(g => ui.tags.every(t => filterTagsOf(g).includes(t)));
+    // Hall: count what each hall would show with the other filters, then narrow
+    const hallCounts = new Map();
+    list.forEach(g => hallsOf(g).forEach(h => hallCounts.set(h, (hallCounts.get(h) || 0) + 1)));
+    if (ui.hall) list = list.filter(g => hallsOf(g).includes(ui.hall));
     const tagCounts = new Map();
     list.forEach(g => filterTagsOf(g).forEach(t => tagCounts.set(t, (tagCounts.get(t) || 0) + 1)));
     const tagChips = [...ui.tags, ...allTags().filter(t => tagCounts.has(t) && !ui.tags.includes(t))]
@@ -334,11 +340,16 @@
       ${anySample ? `<div class="banner">🧪 Cards marked <b>sample</b> have placeholder booths and times. Edit them or clear them under <b>More</b>.</div>` : ""}
       ${nPreview && !ui.query && !ui.tags.length ? `<div class="banner">📰 ${games().length} SPIEL 2026 games: SPIEL's official novelty list (✅), BoardGameGeek's SPIEL preview, and ${nPreview} hyped picks from preview articles (marked <b>preview</b>). Only games in English are listed (no accessories); other-language editions show up when you search for them. Demo times aren't published, so add them with <b>Edit game</b> once you know them.</div>` : ""}
       <div class="list-head"><p class="muted small">${list.length} game${list.length === 1 ? "" : "s"}</p>
+        <label class="sort">Hall <select id="hall" aria-label="Filter by hall">
+          <option value="">All halls</option>
+          ${[...new Set([...hallCounts.keys(), ...(ui.hall ? [ui.hall] : [])])].sort((a, b) => (parseInt(a) || 99) - (parseInt(b) || 99) || a.localeCompare(b))
+            .map(h => `<option value="${esc(h)}" ${ui.hall === h ? "selected" : ""}>${/^\d+$/.test(h) ? `Hall ${esc(h)}` : esc(h)} (${hallCounts.get(h) || 0})</option>`).join("")}
+        </select></label>
         <label class="sort">Sort <select id="sort" aria-label="Sort games">
           ${[["name", "Name A–Z"], ["price-asc", "Price: low to high"], ["price-desc", "Price: high to low"], ["rating", "BGG rating: best first"]]
             .map(([v, l]) => `<option value="${v}" ${ui.sort === v ? "selected" : ""}>${l}</option>`).join("")}
         </select></label></div>
-      ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : q && ui.filter === "all" && !ui.tags.length ? "" : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
+      ${list.length ? list.slice(0, ui.limit).map(gameCard).join("") : q && ui.filter === "all" && !ui.tags.length && !ui.hall ? "" : `<div class="empty"><span class="big">🔍</span><b>No games here</b><p>Try another filter or add a game.</p></div>`}
       ${list.length > ui.limit ? `<button class="btn secondary block" style="margin-top:12px" data-action="more">Show more (${list.length - ui.limit} left)</button>` : ""}
       ${q ? searchExtras(ui.query.trim(), list.length) : ""}`;
   }
@@ -358,7 +369,7 @@
     const away = (SEED.notAtFair || []).filter(x => fold(`${x.name} ${x.publisher || ""}`).includes(q)).slice(0, 12);
     const foreign = (SEED.otherLanguage || []).filter(x => fold(`${x.name} ${x.publisher || ""}`).includes(q));
     const exhibitors = (SEED.exhibitors || []).filter(x => fold(x.name).includes(q)).slice(0, 8);
-    const filtered = ui.filter !== "all" || ui.tags.length;
+    const filtered = ui.filter !== "all" || ui.tags.length || ui.hall;
     let html = "";
     if (away.length) html += `<h2 class="section-title">🚫 Known, but not expected at SPIEL</h2>` + away.map(x => {
       const url = safeUrl(x.url);
@@ -381,6 +392,10 @@
     else if (!found && !away.length && !foreign.length && !filtered) html += `<p class="hint">No exhibitor matches “${esc(query)}” either.</p>`;
     return html;
   }
+
+  // Every hall a game can be found in: its main booth plus any extra booths ("6-B200", "GA73" = Galeria)
+  const hallsOf = g => [...new Set([g.hall, ...(g.otherBooths || []).map(b => /^GA/i.test(b) ? "Galeria" : String(b).split("-")[0])]
+    .filter(Boolean).map(String))];
 
   const priceOf = g => {
     const p = Number(g.price);
@@ -1228,6 +1243,7 @@
   document.addEventListener("change", e => {
     const t = e.target;
     if (t.id === "sort") { ui.sort = t.value; ui.limit = PAGE; render(); return; }
+    if (t.id === "hall") { ui.hall = t.value; ui.limit = PAGE; render(); return; }
     if (t.dataset.potFor || (t.id === "buy-pot" && ui.sheetGame)) {
       const b = myPlan().buy[t.dataset.potFor || ui.sheetGame];
       if (!b) return;
