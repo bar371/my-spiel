@@ -73,6 +73,11 @@ const norm = s => s.replace(/ /g, " ");
   console.log("Favorites");
   await tab(B, "games"); await B.click('.game-card[data-game="heat"] .fav-btn');
   ok(await until(async () => { await tab(A, "crew"); const t = norm(await A.locator("#view").innerText()); return t.includes("Crew favorites") && t.includes("Heat"); }), "Bar sees Naomi's favorite");
+  await tab(B, "games"); await B.click('.game-card[data-game="heat"] .fav-btn');
+  ok((await B.locator('.game-card[data-game="heat"] .fav-btn').innerText()) === "☆", "Naomi's own star clears");
+  ok(await until(async () => { await tab(A, "crew"); return !norm(await A.locator("#view").innerText()).includes("Crew favorites"); }), "Bar sees Naomi's favorite go away");
+  await tab(A, "games");
+  ok(!(await A.locator('.game-card[data-game="heat"]').innerText()).includes("★ Naomi"), "the ★ Naomi pill goes away on Bar's card");
 
   console.log("Shared budget");
   await tab(A, "budget"); await A.click('[data-action="pot-new"]');
