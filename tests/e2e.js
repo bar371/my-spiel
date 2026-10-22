@@ -207,6 +207,27 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await p.click('.buy-row .tap >> nth=0');
   ok(await p.isVisible('#sheet'), 'tapping buy row opens game'); await close();
 
+  console.log('Shared budget');
+  await p.click('[data-action="pot-new"]');
+  await p.click('#pot-form button[type=submit]');
+  ok(await p.isVisible('#pot-form'), 'a shared budget needs someone to share with');
+  await p.click('.pot-members input[value="naomi"]', { force: true });
+  await p.fill('#pot-form [name=name]', 'Sjoerd & Naomi'); await p.fill('#pot-form [name=budget]', '100');
+  await p.click('#pot-form button[type=submit]');
+  { const pots = (await db()).pots; ok(pots.length === 1 && pots[0].members.join() === 'sjord,naomi' && pots[0].budget === 100, 'shared budget saved'); }
+  ok((await text('.view')).includes('🤝 Sjoerd & Naomi'), 'shared budget shown on the Budget tab');
+  const personalBefore = await text('.legend >> nth=0');
+  await p.selectOption('.pot-select >> nth=0', { label: 'Sjoerd & Naomi' });
+  { const d = await db(); ok(Object.values(d.plans.sjord.buy).some(b => b.pot === d.pots[0].id), 'item moved to the shared budget'); }
+  ok((await text('.legend >> nth=0')) !== personalBefore, 'personal budget no longer counts it');
+  ok(await p.locator('.coins').count() === 2, 'personal and shared budget cards');
+  // Naomi's own item in the same pot shows up for Sjoerd, read-only
+  await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('spiel26:v1')); d.plans.naomi.buy['sky-team'] = { price: 30, prio: 'must', bought: false, pot: d.pots[0].id }; d.plans.naomi.updatedAt = Date.now(); localStorage.setItem('spiel26:v1', JSON.stringify(d)); });
+  await p.reload(); await tab('budget');
+  ok((await text('.view')).includes('Sky Team') && await p.locator('.check.readonly').count() === 1, "Naomi's item is in the shared budget, read-only");
+  await p.click('[data-action="pot-edit"]'); await p.click('[data-action="pot-delete"]');
+  ok((await db()).pots[0].deleted === true && await p.locator('.coins').count() === 1, 'deleting a shared budget sends items back to personal');
+
   console.log('Schedule');
   await tab('schedule'); await p.click('[data-day="2026-10-22"]');
   ok(await p.locator('.pblock').count() === 1, 'Thu shows 1 session');
