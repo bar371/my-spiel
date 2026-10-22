@@ -1,6 +1,6 @@
 # SPIEL '26 Planner 🎲
 
-A small planner for our crew (Sjoerd, Annemieke, Bar and Naomi) at **SPIEL Essen 2026**
+A small planner for our crew (Sjoerd, Annemieke, Bar, Naomi, Elena and Ties) at **SPIEL Essen 2026**
 (Messe Essen, Thu 22 – Sun 25 October 2026).
 
 - **My day**: a time grid of your day: demo sessions you've joined (fixed times 🔒) and booth visits you've planned. Drag a visit by its ⠿ grip to move it, or by its bottom edge to change its length (15-minute steps, mouse or touch). Clashes are outlined in red, and **Fix clashes** moves overlapping visits to the next free time.
