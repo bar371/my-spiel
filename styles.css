@@ -391,7 +391,8 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 .langs { margin: 4px 2px 0; }
 
 /* ---------- Games list head: count + sort ---------- */
-.list-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 0 4px 8px; }
+.list-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; margin: 0 4px 8px; }
+.list-head p { flex: 1 1 100%; }
 .list-head p { margin: 0; color: var(--paper); opacity: .8; }
 .list-head .sort { color: var(--paper); font-size: .85rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
 .list-head select { font: inherit; font-size: .85rem; padding: 5px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--paper); color: var(--ink); }
