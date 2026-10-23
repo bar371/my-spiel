@@ -57,6 +57,8 @@ const norm = s => s.replace(/ /g, " ");
   ok(await until(async () => norm(await B.locator("#sheet-body").innerText()).includes("Bar")), "game detail lists Bar on the session");
   await B.click('[data-session="cascadia-1"]'); await B.click(".sheet-x");
   ok(await until(async () => { const t = await crewText(A); return t.includes("together") && t.includes("Bar, Naomi"); }), "Bar sees 'together' with Naomi");
+  await B.click('[data-game="cascadia"]'); await B.click('#sheet .session.on .seat-tag'); await B.click(".sheet-x");
+  ok(await until(async () => (await crewText(A)).includes("1/2 seats booked")), "Bar sees that Naomi booked her seat");
 
   console.log("Shared games");
   await tab(B, "games"); await B.click('[data-action="new"]');

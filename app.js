@@ -29,7 +29,7 @@
   const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
 
   // ---------- Persistence ----------
-  const emptyPlan = () => ({ sessions: [], visits: [], favs: [], buy: {}, budget: 0, notes: {}, updatedAt: 0 });
+  const emptyPlan = () => ({ sessions: [], seats: [], visits: [], favs: [], buy: {}, budget: 0, notes: {}, updatedAt: 0 });
 
   function load() {
     let db = null;
@@ -113,6 +113,12 @@
   const favButton = (g, big) => { const on = isFav(db.currentMember, g.id);
     return `<button class="fav-btn ${on ? "on" : ""} ${big ? "big" : ""}" data-action="fav" data-game="${esc(g.id)}" aria-pressed="${on}" aria-label="${on ? "Remove from favorites" : "Add to favorites"}" title="Favorite">${on ? "★" : "☆"}${big ? ` ${on ? "Favorite" : "Add to favorites"}` : ""}</button>`; };
   const whoJoins = sid => MEMBERS.filter(m => db.plans[m.id].sessions.includes(sid));
+  // Joining a demo session is the plan; whether we actually got a seat is tracked separately
+  const hasSeat = (memberId, sid) => (db.plans[memberId].seats || []).includes(sid);
+  const seatTag = (memberId, sid, toggle) => { const on = hasSeat(memberId, sid);
+    const label = on ? "🎟 Seat booked" : "⏳ No seat yet";
+    return toggle ? `<button class="seat-tag ${on ? "on" : ""}" data-action="seat" data-seat="${esc(sid)}" aria-pressed="${on}" title="Tap when you've booked a seat">${label}</button>`
+      : `<span class="seat-tag ${on ? "on" : ""}">${label}</span>`; };
   const whoJoinsGame = g => MEMBERS.filter(m => planItems(m.id).some(x => x.g.id === g.id));
 
   // Everything on a member's schedule: joined demo sessions (fixed times) and booth
@@ -285,7 +291,7 @@
         ${!mine ? `<span class="lock">${withMe ? `<span title="You're there too">🙋</span>` : ""}</span>` : visit ? `<span class="grip" data-drag="move" title="Drag to move" aria-label="Move ${esc(x.g.name)}">⠿</span>` : `<span class="lock" title="Demo session: fixed time">🔒</span>`}
         <div class="block-body tap" data-action="open" data-game="${esc(x.g.id)}">
           <b class="block-name">${esc(x.g.name)}</b>
-          <span class="block-time">${esc(x.start)}–${esc(x.end)}${visit ? " · booth visit" : " · demo"}</span>
+          <span class="block-time">${esc(x.start)}–${esc(x.end)}${visit ? " · booth visit" : " · demo"}${visit ? "" : ` ${seatTag(who, x.id, mine)}`}</span>
           <span class="block-where">${[hallText(x.g), x.location].filter(Boolean).map(esc).join(" · ")}</span>
           ${clash.length ? `<span class="block-warn">⚠ clashes with ${esc(clash.map(c => c.g.name).join(", "))}</span>` : ""}
         </div>
@@ -468,11 +474,11 @@
 
     return `<h2 class="section-title">🗺️ Who's going where · ${esc(dayLabel(day.date))}</h2>
       ${banner}
-      ${going.length ? going.map(({ kind, start, end, location, g, who }) => `<article class="card tap going ${who.length > 1 ? "together" : ""}" data-action="open" data-game="${esc(g.id)}">
+      ${going.length ? going.map(({ kind, id, start, end, location, g, who }) => `<article class="card tap going ${who.length > 1 ? "together" : ""}" data-action="open" data-game="${esc(g.id)}">
           <div class="going-time"><b>${esc(start)}</b><small>${esc(end)}</small></div>
           <div><h3 class="game-name">${esc(g.name)}</h3>
             <div class="meta">${meeples(who)}<span class="small">${esc(who.map(m => m.name).join(", "))}</span></div>
-            <div class="meta">${kind === "visit" ? `<span class="pill">🙋 booth visit</span>` : `<span class="pill">🎲 demo</span>`}${hallPill(g)}${location ? `<span class="pill">📍 ${esc(location)}</span>` : ""}
+            <div class="meta">${kind === "visit" ? `<span class="pill">🙋 booth visit</span>` : `<span class="pill">🎲 demo</span><span class="pill ${who.every(m => hasSeat(m.id, id)) ? "ok" : ""}">🎟 ${who.filter(m => hasSeat(m.id, id)).length}/${who.length} seat${who.length === 1 ? "" : "s"} booked</span>`}${hallPill(g)}${location ? `<span class="pill">📍 ${esc(location)}</span>` : ""}
               ${who.length > 1 ? `<span class="pill ok">🤝 together</span>` : ""}
               ${who.some(m => m.id === db.currentMember) ? `<span class="pill gold">you're in</span>` : ""}</div></div>
         </article>`).join("")
@@ -728,7 +734,8 @@
           <div><div class="when">${esc(dayLabel(s.day))} · ${esc(s.start)}–${esc(s.end)}</div>
             <div class="where">${[s.location, s.note].filter(Boolean).map(esc).join(" · ")}</div>
             ${clash.length ? `<div class="meta"><span class="pill warn">⚠ ${on ? "Clashes with" : "Overlaps"} ${esc(clash.map(c => c.g.name).join(", "))}</span></div>` : ""}
-            ${whoJoins(s.id).length ? `<div class="meta">${meeples(whoJoins(s.id))}<span class="small muted">&nbsp;${esc(whoJoins(s.id).map(m => m.name).join(", "))}</span></div>` : ""}
+            ${on ? `<div class="meta">${seatTag(db.currentMember, s.id, true)}</div>` : ""}
+            ${whoJoins(s.id).length ? `<div class="meta">${meeples(whoJoins(s.id))}<span class="small muted">&nbsp;${esc(whoJoins(s.id).map(m => `${m.name} ${hasSeat(m.id, s.id) ? "🎟" : "⏳"}`).join(", "))}</span></div>` : ""}
           </div>
           <button class="btn small ${on ? "secondary" : "green"}" data-action="join" data-session="${esc(s.id)}">${on ? "Leave" : "Join"}</button>
         </div>`;
@@ -948,6 +955,7 @@
   const cleanPlan = p => {
     const plan = Object.assign(emptyPlan(), p);
     plan.sessions = asList(p.sessions).filter(x => typeof x === "string");
+    plan.seats = asList(p.seats).filter(x => typeof x === "string");
     plan.favs = asList(p.favs).filter(x => typeof x === "string");
     plan.visits = asList(p.visits).filter(v => isObj(v) && ["id", "game", "day", "start", "end"].every(k => typeof v[k] === "string"));
     plan.buy = isObj(p.buy) ? p.buy : {};
@@ -1108,13 +1116,22 @@
       case "join": {
         const sid = el.dataset.session;
         const i = plan.sessions.indexOf(sid);
-        if (i >= 0) { plan.sessions.splice(i, 1); toast("Left session"); }
+        if (i >= 0) { plan.sessions.splice(i, 1); plan.seats = (plan.seats || []).filter(x => x !== sid); toast("Left session"); }
         else {
           plan.sessions.push(sid);
           const s = sessionIndex().get(sid)?.s;
           if (s) ui.day = s.day;
           toast(s && conflictsFor(db.currentMember, s).length ? "Joined, but it clashes with another session" : "Joined! 🎉");
         }
+        touch(db.currentMember); render(); refreshSheet();
+        break;
+      }
+      case "seat": {
+        const sid = el.dataset.seat;
+        const seats = plan.seats || (plan.seats = []);
+        const i = seats.indexOf(sid);
+        if (i >= 0) seats.splice(i, 1); else seats.push(sid);
+        toast(i >= 0 ? "Marked as no seat yet" : "Seat booked 🎟");
         touch(db.currentMember); render(); refreshSheet();
         break;
       }

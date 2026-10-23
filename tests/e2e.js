@@ -245,6 +245,18 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok(await p.locator('.pblock').count() === 1, 'Thu shows 1 session');
   ok((await text('[data-day="2026-10-22"] .count')) === '1', 'day badge count');
   ok(await p.locator('.pblock-session .grip').count() === 0 && await p.locator('.pblock-session .lock').count() === 1, 'demo session is fixed (no drag grip)');
+  ok((await text('.pblock-session .seat-tag')).includes('No seat yet'), 'a joined session starts as "no seat yet"');
+  await p.click('.pblock-session .seat-tag');
+  { const d = await db(); const sid = d.plans.sjord.sessions[0];
+    ok(d.plans.sjord.seats.includes(sid) && (await text('.pblock-session .seat-tag')).includes('Seat booked'), 'tapping the tag marks the seat as booked'); }
+  ok(!(await p.isVisible('#sheet')), "the seat tag doesn't open the game");
+  await p.click('.pblock .block-body');
+  ok((await text('#sheet .session.on')).includes('Seat booked') && (await text('#sheet .session.on')).includes('Sjoerd 🎟'), 'the game sheet shows the seat too');
+  await p.click('#sheet .session.on .seat-tag');
+  ok((await db()).plans.sjord.seats.length === 0 && (await text('#sheet .session.on')).includes('No seat yet'), 'and can undo it there');
+  await p.click('#sheet .session.on .seat-tag'); await close();
+  await tab('crew'); ok((await text('.view')).includes('1/1 seat booked'), 'crew view counts booked seats');
+  await tab('schedule');
   await p.click('.pblock .block-body'); ok(await p.isVisible('#sheet'), 'timeline card opens game'); await close();
 
   console.log('Booth visits & drag and drop');
