@@ -6,10 +6,10 @@
  *     currentMember            who is using this device
  *     customGames[]            games added or edited in the app (override seed by id)
  *     hiddenGames[]            seed game ids removed in the app
- *     plans{memberId}          { sessions[], visits[], favs[gameId], buy{gameId:{price,prio,bought}}, budget, notes{}, updatedAt }
+ *     plans{memberId}          { sessions[], seats[sessionId], visits[], favs[gameId], buy{gameId:{price,prio,bought,pot?}}, budget, unlimited?, notes{}, updatedAt }
  *                              visits are booth visits planned without a demo session:
  *                              { id, game, day, start, end }
- *     pots[]                   shared budgets: { id, name, members[], budget, updatedAt, deleted? };
+ *     pots[]                   shared budgets: { id, name, members[], budget, unlimited?, updatedAt, deleted? };
  *                              a buy-list item with { pot: id } is paid from that pot
  *     crewCode                 shared crew id for live sync (see data/sync-config.js)
  *
@@ -29,7 +29,7 @@
   const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
 
   // ---------- Persistence ----------
-  const emptyPlan = () => ({ sessions: [], seats: [], visits: [], favs: [], buy: {}, budget: 0, notes: {}, updatedAt: 0 });
+  const emptyPlan = () => ({ sessions: [], seats: [], visits: [], favs: [], buy: {}, budget: 0, unlimited: false, notes: {}, updatedAt: 0 });
 
   function load() {
     let db = null;
@@ -506,19 +506,21 @@
     .map(([id, b]) => ({ id, b, g: gameById(id), m: member(mid) }))).filter(x => x.g).sort(byPrio);
   const potLabel = p => p.name || p.members.map(id => (member(id) || {}).name).filter(Boolean).join(" & ");
 
-  function budgetCard(budget, items, input) {
+  // `unlimited` budgets have no cap: no amount left, no over-budget warnings
+  function budgetCard(budget, items, input, unlimited, potId) {
     const sum = f => items.filter(f).reduce((t, x) => t + (+x.b.price || 0), 0);
     const bought = sum(x => x.b.bought), must = sum(x => !x.b.bought && x.b.prio === "must"), maybe = sum(x => !x.b.bought && x.b.prio !== "must");
-    const left = budget - bought, scale = Math.max(budget, bought + must, 1);
+    const left = budget - bought, scale = unlimited ? Math.max(bought + must + maybe, 1) : Math.max(budget, bought + must, 1);
+    const toggle = `<button class="btn small ${unlimited ? "" : "secondary"} infinite-btn" data-action="budget-infinite" ${potId ? `data-pot="${esc(potId)}"` : ""} aria-pressed="${!!unlimited}">${unlimited ? "Set a limit" : "♾️ No limit"}</button>`;
     return `<div class="card budget-head">
-        <label class="muted small">Budget for the fair&nbsp;${input}</label>
-        <div class="coins ${left < 0 ? "over" : ""}">${eur.format(left)}</div>
-        <div class="muted small">${left < 0 ? "over budget" : "left to spend"}</div>
+        <label class="muted small">Budget for the fair&nbsp;${unlimited ? "" : input}</label> ${toggle}
+        <div class="coins ${!unlimited && left < 0 ? "over" : ""}">${unlimited ? "∞" : eur.format(left)}</div>
+        <div class="muted small">${unlimited ? `no limit · ${eur.format(bought)} spent so far` : left < 0 ? "over budget" : "left to spend"}</div>
         <div class="bar"><span class="bought" style="width:${bought / scale * 100}%"></span><span class="planned" style="width:${must / scale * 100}%"></span></div>
         <div class="legend"><span><i style="background:var(--ok)"></i>Bought ${eur.format(bought)}</span>
           <span><i style="background:var(--accent)"></i>Must-have ${eur.format(must)}</span>
           <span><i style="background:var(--paper-2)"></i>Maybe ${eur.format(maybe)}</span></div>
-        ${budget && bought + must > budget ? `<p class="pill warn" style="margin-top:10px">⚠ Must-haves go ${eur.format(bought + must - budget)} over budget</p>` : ""}
+        ${!unlimited && budget && bought + must > budget ? `<p class="pill warn" style="margin-top:10px">⚠ Must-haves go ${eur.format(bought + must - budget)} over budget</p>` : ""}
       </div>`;
   }
 
@@ -548,12 +550,12 @@
       const its = potItems(p);
       return `<h2 class="section-title">🤝 ${esc(potLabel(p))} <span class="pill">${meeples(p.members.map(member).filter(Boolean))}</span>
           <button class="btn small secondary" data-action="pot-edit" data-pot="${esc(p.id)}" style="margin-left:auto">Edit</button></h2>
-        ${budgetCard(+p.budget || 0, its, `<input class="inline pot-budget" data-pot="${esc(p.id)}" type="number" inputmode="decimal" min="0" step="5" value="${+p.budget || ""}" placeholder="€ 0">`)}
+        ${budgetCard(+p.budget || 0, its, `<input class="inline pot-budget" data-pot="${esc(p.id)}" type="number" inputmode="decimal" min="0" step="5" value="${+p.budget || ""}" placeholder="€ 0">`, p.unlimited, p.id)}
         ${its.length ? its.map(x => buyRow(x, true)).join("") : `<p class="hint">Nothing in this budget yet. On your shopping list, set <b>Pay from</b> to “${esc(potLabel(p))}”.</p>`}`;
     }).join("");
 
     return `<h2 class="section-title">💰 ${esc(me().name)}'s budget</h2>
-      ${budgetCard(budget, items, `<input class="inline" id="budget" type="number" inputmode="decimal" min="0" step="5" value="${budget || ""}" placeholder="€ 0">`)}
+      ${budgetCard(budget, items, `<input class="inline" id="budget" type="number" inputmode="decimal" min="0" step="5" value="${budget || ""}" placeholder="€ 0">`, plan.unlimited)}
       <h2 class="section-title">🛒 Shopping list</h2>
       ${items.length ? items.map(x => buyRow(x, false)).join("")
         : Object.keys(plan.buy).length ? `<p class="hint">Everything on your list is paid from a shared budget.</p>`
@@ -864,7 +866,7 @@
 
   const cleanPot = p => isObj(p) && typeof p.id === "string" && KEY_RE.test(p.id) ? {
     id: p.id, name: typeof p.name === "string" ? p.name : "", members: asList(p.members).filter(m => typeof m === "string"),
-    budget: Math.max(0, Number(p.budget) || 0), updatedAt: +p.updatedAt || 0, ...(p.deleted ? { deleted: true } : {}) } : null;
+    budget: Math.max(0, Number(p.budget) || 0), ...(p.unlimited ? { unlimited: true } : {}), updatedAt: +p.updatedAt || 0, ...(p.deleted ? { deleted: true } : {}) } : null;
   // Newest version of each shared budget wins; true when something changed
   function mergePots(incoming) {
     let changed = false;
@@ -959,6 +961,7 @@
     plan.favs = asList(p.favs).filter(x => typeof x === "string");
     plan.visits = asList(p.visits).filter(v => isObj(v) && ["id", "game", "day", "start", "end"].every(k => typeof v[k] === "string"));
     plan.buy = isObj(p.buy) ? p.buy : {};
+    plan.unlimited = p.unlimited === true;
     plan.notes = isObj(p.notes) ? p.notes : {};
     plan.updatedAt = +p.updatedAt || 0;
     return plan;
@@ -1133,6 +1136,15 @@
         if (i >= 0) seats.splice(i, 1); else seats.push(sid);
         toast(i >= 0 ? "Marked as no seat yet" : "Seat booked 🎟");
         touch(db.currentMember); render(); refreshSheet();
+        break;
+      }
+      case "budget-infinite": {
+        const p = el.dataset.pot ? db.pots.find(x => x.id === el.dataset.pot) : null;
+        if (el.dataset.pot && !p) break;
+        const target = p || plan, on = !target.unlimited;
+        if (p) { if (on) p.unlimited = true; else delete p.unlimited; p.updatedAt = Date.now(); save(); }
+        else { plan.unlimited = on; touch(db.currentMember); }
+        render(); toast(on ? "♾️ No limit. Spend away!" : "Budget limit back on");
         break;
       }
       case "buy": {
