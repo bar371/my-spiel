@@ -191,6 +191,7 @@
     tags: [],
     sort: "name",
     hall: "",
+    who: "",       // whose schedule the Schedule tab shows ("" = mine)
     limit: PAGE,
     sheetGame: null
   };
@@ -228,7 +229,7 @@
     const crew = ui.tab === "crew";
     nav.style.setProperty("--day-count", DAYS.length);
     nav.innerHTML = DAYS.map(d => {
-      const n = crew ? crewItems(d.date).length : planItems(db.currentMember, d.date).length;
+      const n = crew ? crewItems(d.date).length : planItems(viewedMember(), d.date).length;
       return `<button class="day ${ui.day === d.date ? "active" : ""}" data-day="${d.date}">
         <b>${d.label}</b><small>${Number(d.date.slice(8))} Oct</small><br><span class="count">${n}</span></button>`;
     }).join("");
@@ -237,14 +238,22 @@
   // ---------- Views ----------
   // ---------- My day: a time grid. Visits can be dragged; demo sessions are fixed ----------
   const PX = 1.6; // pixels per minute
+  // Whose schedule the Schedule tab shows: mine, or a crew member's (read-only)
+  const viewedMember = () => (ui.who && ui.who !== db.currentMember && member(ui.who)) ? ui.who : db.currentMember;
   function viewSchedule() {
     const day = DAYS.find(d => d.date === ui.day) || DAYS[0];
-    const items = planItems(db.currentMember, day.date);
-    let html = `<h2 class="section-title">${esc(dayLabel(day.date))} <span class="pill">${day.open}–${day.close}</span></h2>`;
+    const who = viewedMember(), mine = who === db.currentMember, other = member(who);
+    const items = planItems(who, day.date);
+    const myItems = mine ? [] : planItems(db.currentMember, day.date);
+    const whoRow = `<div class="who-row" role="group" aria-label="Whose schedule">${[me(), ...MEMBERS.filter(m => m.id !== db.currentMember)].map(m => { const on = m.id === who;
+      return `<button class="who-chip ${on ? "active" : ""}" data-action="view-who" data-who="${m.id}" aria-pressed="${on}">${meeple(m.color)}<span>${m.id === db.currentMember ? "Me" : esc(m.name)}</span></button>`; }).join("")}</div>`;
+    let html = whoRow + `<h2 class="section-title">${mine ? "" : `${esc(other.name)}'s `}${esc(dayLabel(day.date))} <span class="pill">${day.open}–${day.close}</span></h2>`;
     if (!items.length) {
-      return html + `<div class="empty"><span class="big">🧩</span><b>Nothing planned yet</b>
+      return html + (mine ? `<div class="empty"><span class="big">🧩</span><b>Nothing planned yet</b>
         <p>Open a game and join a demo session, or plan a visit to its booth.</p>
-        <button class="btn" data-action="tab" data-tab="games">Browse games</button></div>`;
+        <button class="btn" data-action="tab" data-tab="games">Browse games</button></div>`
+        : `<div class="empty"><span class="big">🧩</span><b>${esc(other.name)} has nothing planned on this day</b>
+        <p>Pick another day, or another crew member above.</p></div>`);
     }
     const open = mins(day.open), close = Math.max(mins(day.close), ...items.map(x => mins(x.end)));
     const first = Math.min(open, ...items.map(x => mins(x.start)));
@@ -266,26 +275,29 @@
     });
 
     const blocks = placed.map(({ x, lane, cols }) => {
-      const clash = conflictsFor(db.currentMember, x);
+      const clash = conflictsFor(who, x);
       const top = (mins(x.start) - first) * PX, h = Math.max(26, (mins(x.end) - mins(x.start)) * PX - 3);
-      const visit = x.kind === "visit";
-      return `<article class="pblock ${visit ? "pblock-visit" : "pblock-session"} ${clash.length ? "conflict" : ""} ${h < 46 ? "short" : ""}"
-          data-item="${esc(x.id)}" style="top:${top}px;height:${h}px;left:calc(${lane} * (100% / ${cols}));width:calc(100% / ${cols} - 4px)">
-        ${visit ? `<span class="grip" data-drag="move" title="Drag to move" aria-label="Move ${esc(x.g.name)}">⠿</span>` : `<span class="lock" title="Demo session: fixed time">🔒</span>`}
+      const visit = x.kind === "visit", movable = visit && mine;
+      // On a crew member's day, show where I'm there too (same session, or same game at an overlapping time)
+      const withMe = !mine && myItems.some(y => y.id === x.id || (y.g.id === x.g.id && overlaps(y, x)));
+      return `<article class="pblock ${visit ? "pblock-visit" : "pblock-session"} ${clash.length ? "conflict" : ""} ${h < 46 ? "short" : ""} ${mine ? "" : "readonly"} ${withMe ? "with-me" : ""}"
+          data-item="${esc(x.id)}" style="top:${top}px;height:${h}px;left:calc(${lane} * (100% / ${cols}));width:calc(100% / ${cols} - 4px)${mine ? "" : `;border-left-color:${esc(other.color)}`}">
+        ${!mine ? `<span class="lock">${withMe ? `<span title="You're there too">🙋</span>` : ""}</span>` : visit ? `<span class="grip" data-drag="move" title="Drag to move" aria-label="Move ${esc(x.g.name)}">⠿</span>` : `<span class="lock" title="Demo session: fixed time">🔒</span>`}
         <div class="block-body tap" data-action="open" data-game="${esc(x.g.id)}">
           <b class="block-name">${esc(x.g.name)}</b>
           <span class="block-time">${esc(x.start)}–${esc(x.end)}${visit ? " · booth visit" : " · demo"}</span>
           <span class="block-where">${[hallText(x.g), x.location].filter(Boolean).map(esc).join(" · ")}</span>
           ${clash.length ? `<span class="block-warn">⚠ clashes with ${esc(clash.map(c => c.g.name).join(", "))}</span>` : ""}
         </div>
-        ${visit ? `<span class="resize" data-drag="resize" title="Drag to change length" aria-label="Change length"></span>` : ""}
+        ${movable ? `<span class="resize" data-drag="resize" title="Drag to change length" aria-label="Change length"></span>` : ""}
       </article>`;
     }).join("");
 
-    const fixable = items.some(x => x.kind === "visit" && conflictsFor(db.currentMember, x).length);
+    const fixable = mine && items.some(x => x.kind === "visit" && conflictsFor(db.currentMember, x).length);
     return html + `<div class="board"><div class="dayplan" data-first="${first}" data-close="${close}" style="height:${(close - first) * PX}px">
         ${hours.join("")}<div class="blocks">${blocks}</div></div></div>
-      <p class="hint">⠿ Drag a booth visit to move it, or its bottom edge to change its length. 🔒 Demo sessions keep their times.</p>
+      <p class="hint">${mine ? "⠿ Drag a booth visit to move it, or its bottom edge to change its length. 🔒 Demo sessions keep their times."
+        : `Viewing ${esc(other.name)}'s plan. 🙋 marks where you're there too. Tap a game to join it.`}</p>
       ${fixable ? `<button class="btn block" data-action="fix-clashes">🪄 Fix clashes: move visits to free time</button>` : ""}`;
   }
   const fmt = m => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
@@ -1078,11 +1090,12 @@
     switch (a) {
       case "tab": ui.tab = el.dataset.tab; render(); window.scrollTo(0, 0); break;
       case "pick":
-        db.currentMember = el.dataset.member; save();
+        db.currentMember = el.dataset.member; ui.who = ""; save();
         $("#sheet").dataset.locked = ""; closeSheet(); render();
         toast(`Hi ${me().name}!`);
         break;
       case "who": pickPlayerSheet(false); break;
+      case "view-who": ui.who = el.dataset.who === db.currentMember ? "" : el.dataset.who; render(); window.scrollTo(0, 0); break;
       case "open": gameSheet(gid); break;
       case "filter": ui.filter = el.dataset.filter; ui.limit = PAGE; render(); break;
       case "tag": {
