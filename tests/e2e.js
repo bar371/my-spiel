@@ -216,6 +216,12 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   ok((await text('.view')).includes('go 9,50 € over'), 'must-have over-budget warning');
   await p.fill('#budget', '10'); await p.locator('#budget').blur();
   ok(await p.locator('.coins.over').count() === 1, 'over-budget styling');
+  await p.click('[data-action="budget-infinite"]');
+  ok((await db()).plans.sjord.unlimited === true && (await text('.coins')) === '∞' && await p.locator('.coins.over').count() === 0 && await p.locator('#budget').count() === 0, 'No limit makes the budget infinite');
+  ok(!(await text('.view')).includes('over budget') && !(await text('.view')).includes('€ over'), 'no over-budget warnings without a limit');
+  await p.reload(); await tab('budget'); ok((await text('.coins')) === '∞', 'no limit kept after reload');
+  await p.click('[data-action="budget-infinite"]');
+  ok((await db()).plans.sjord.unlimited === false && await p.inputValue('#budget') === '10' && await p.locator('.coins.over').count() === 1, 'Set a limit brings the old budget back');
   await p.click('.buy-row .tap >> nth=0');
   ok(await p.isVisible('#sheet'), 'tapping buy row opens game'); await close();
 
@@ -233,6 +239,9 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   { const d = await db(); ok(Object.values(d.plans.sjord.buy).some(b => b.pot === d.pots[0].id), 'item moved to the shared budget'); }
   ok((await text('.legend >> nth=0')) !== personalBefore, 'personal budget no longer counts it');
   ok(await p.locator('.coins').count() === 2, 'personal and shared budget cards');
+  await p.click('[data-action="budget-infinite"][data-pot]');
+  { const d = await db(); ok(d.pots[0].unlimited === true && d.plans.sjord.unlimited === false && (await text('.coins >> nth=1')) === '∞', 'a shared budget can go limitless on its own'); }
+  await p.click('[data-action="budget-infinite"][data-pot]'); ok(!(await db()).pots[0].unlimited, '…and back');
   // Naomi's own item in the same pot shows up for Sjoerd, read-only
   await p.evaluate(() => { const d = JSON.parse(localStorage.getItem('spiel26:v1')); d.plans.naomi.buy['sky-team'] = { price: 30, prio: 'must', bought: false, pot: d.pots[0].id }; d.plans.naomi.updatedAt = Date.now(); localStorage.setItem('spiel26:v1', JSON.stringify(d)); });
   await p.reload(); await tab('budget');

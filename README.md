@@ -7,7 +7,7 @@ A small planner for our crew (Sjoerd, Annemieke, Bar, Naomi, Elena and Ties) at 
 - **Games**: every game we're tracking with publisher, hall/booth, players, play time, price, description, a link, and its session times. Tap a game to join a demo session, **plan a booth visit** (any game, no demo needed: pick a day, start and length; it suggests your next free slot), add it to your buy list, or write notes.
 - **Favorites**: tap ☆ on any game to mark one you like, even if you won't plan it. **★ Favorites** filters the list, and the **Hall** menu narrows it (or any other view) to one hall, with a count per hall. The Crew tab shows the crew's favorites, most-liked first.
 - **Crew**: *Who's going where*: day by day, every demo session and booth visit anyone has planned, with everyone's meeples and a 🤝 badge when you're going together. Updates live once crew sync is on.
-- **Budget**: set your budget, mark games must-have or maybe, tick them off when bought, and see what's left. **Shared budgets** (e.g. Bar & Naomi): create one with 🤝 **New shared budget**, then set **Pay from** on a buy-list item (on the Budget tab or in the game sheet). A shared budget counts everyone's items paid from it; your personal budget only counts the rest. Shared budgets sync with the crew.
+- **Budget**: set your budget, mark games must-have or maybe, tick them off when bought, and see what's left. Tap **♾️ No limit** to make a budget infinite (no amount left, no over-budget warnings); **Set a limit** brings the old amount back. Works for shared budgets too. **Shared budgets** (e.g. Bar & Naomi): create one with 🤝 **New shared budget**, then set **Pay from** on a buy-list item (on the Budget tab or in the game sheet). A shared budget counts everyone's items paid from it; your personal budget only counts the rest. Shared budgets sync with the crew.
 - **More**: switch player, share your plan, back up or restore, and install instructions.
 
 It's a single static page (HTML, CSS and plain JS, with no build step) that works offline once loaded.
@@ -126,7 +126,7 @@ The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
 
-`tests/e2e.js` drives the app in headless Chromium through 142 checks: player pick, search and filters,
+`tests/e2e.js` drives the app in headless Chromium through 148 checks: player pick, search and filters,
 join, leave and clashes, add, edit and delete, notes, budget maths, share-link import, backup and restore,
 offline mode, and layout from 320px to desktop.
 
