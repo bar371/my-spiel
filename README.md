@@ -8,7 +8,7 @@ A small planner for our crew (Sjoerd, Annemieke, Bar, Naomi, Elena and Ties) at 
 - **Favorites**: tap ☆ on any game to mark one you like, even if you won't plan it. **★ Favorites** filters the list, and the **Hall** menu narrows it (or any other view) to one hall, with a count per hall. The Crew tab shows the crew's favorites, most-liked first.
 - **Crew**: *Who's going where*: day by day, every demo session and booth visit anyone has planned, with everyone's meeples and a 🤝 badge when you're going together. Updates live once crew sync is on.
 - **Budget**: set your budget, mark games must-have or maybe, tick them off when bought, and see what's left. Tap **♾️ No limit** to make a budget infinite (no amount left, no over-budget warnings); **Set a limit** brings the old amount back. Works for shared budgets too. **Shared budgets** (e.g. Bar & Naomi): create one with 🤝 **New shared budget**, then set **Pay from** on a buy-list item (on the Budget tab or in the game sheet). A shared budget counts everyone's items paid from it; your personal budget only counts the rest. Shared budgets sync with the crew.
-- **Trophies** 🏆: 54 achievements for buying different games, roaming the halls, big (and small) spending, planning with the crew and more. Hall visits count once a planned visit or demo has passed, or when you buy a game there. The thrifty ones (spent little, stayed within budget) only unlock after the fair. Locked trophies stay secret. A pop-up announces each new one (tap it to open Trophies), and with **🔔 Also notify me on my phone** you also get a phone notification when the app is in the background. The Crew tab shows everyone's trophy count.
+- **Trophies** 🏆: 54 achievements for buying different games, roaming the halls, big (and small) spending, planning with the crew and more. Hall visits count once a planned visit or demo has passed, or when you buy a game there. The thrifty ones (spent little, stayed within budget) only unlock after the fair. Locked trophies stay secret. A pop-up announces each new one (tap it to open Trophies), and with **🔔 Also notify me on my phone** you also get a phone notification when the app is in the background. The Crew tab shows everyone's trophy count. **Teams** share their trophies: one teammate's trophy counts for the whole team (the tile shows who earned it, and teammates get the pop-up too). Default teams are Sjoerd & Annemieke, Bar & Naomi, and Ties & Elena (`teams` in `data/spiel-data.js`). **Edit teams** on the Trophies tab changes them for the whole crew, and **Team standings** ranks the teams.
 - **More**: switch player, share your plan, back up or restore, and install instructions.
 
 It's a single static page (HTML, CSS and plain JS, with no build step) that works offline once loaded.
@@ -127,7 +127,7 @@ The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
 
-`tests/e2e.js` drives the app in headless Chromium through 160 checks: player pick, search and filters,
+`tests/e2e.js` drives the app in headless Chromium through 168 checks: player pick, search and filters,
 join, leave and clashes, add, edit and delete, notes, budget maths, share-link import, backup and restore,
 offline mode, and layout from 320px to desktop.
 

@@ -445,6 +445,27 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
     const after2 = await a.locator('.ach.unlocked b').allInnerTexts();
     ok(after2.includes('Budget Boss') && after2.includes('Thrifty') && after2.includes('Under the Wire') === false, 'after the fair: €90 on a €100 budget is a Budget Boss and Thrifty');
     await a.click('.tabbar [data-tab="crew"]'); ok((await a.locator('.view').innerText()).includes('🏆'), 'crew cards show trophy counts');
+
+    // Teams: no teams in the fixture, so Bar is solo until a team is made
+    await a.click('.tabbar [data-tab="trophies"]');
+    ok((await a.locator('.section-title >> nth=0').innerText()).includes("Bar's trophies"), 'without a team the trophies are your own');
+    const solo = await a.locator('.ach.unlocked').count();
+    await a.click('[data-action="teams-edit"]');
+    await a.selectOption('#teams-form select[name="bar"]', 'new'); await a.selectOption('#teams-form select[name="naomi"]', 'new');
+    await a.click('#teams-form [type=submit]');
+    { const t = (await set(() => JSON.parse(localStorage.getItem('spiel26:v1')).teams)); ok(JSON.stringify(t.groups) === '[["bar","naomi"]]' && t.updatedAt > 0, 'team saved: ' + JSON.stringify(t.groups)); }
+    ok((await a.locator('.section-title >> nth=0').innerText()).includes('Team Bar & Naomi'), 'trophies now show the team');
+    await a.waitForTimeout(4200);
+    await set(() => { const d = JSON.parse(localStorage.getItem('spiel26:v1')); d.plans.naomi.buy = { cascadia: { price: 40, prio: 'must', bought: true } }; d.plans.naomi.favs = ['cascadia']; localStorage.setItem('spiel26:v1', JSON.stringify(d)); });
+    await a.reload(); await a.waitForSelector('#achpop.show', { timeout: 3000 });
+    ok((await a.locator('#achpop').innerText()).includes('Naomi earned it for the team'), "a teammate's new trophy pops up for you too");
+    await a.click('.tabbar [data-tab="trophies"]');
+    const team = await a.locator('.ach.unlocked').count();
+    ok(team > solo && await a.locator('.ach.by-team').count() >= 1, `Naomi's trophies count for the team (${solo} → ${team})`);
+    ok((await a.locator('.ach-head').innerText()).includes('You earned'), 'your own share is shown');
+    ok(await a.locator('.ach-crew').count() === 3 && (await a.locator('.ach-crew.mine').innerText()).includes('Team Bar & Naomi'), 'team standings list teams and solo players');
+    await a.click('[data-action="teams-edit"]'); await a.click('[data-action="teams-reset"]');
+    ok((await set(() => JSON.parse(localStorage.getItem('spiel26:v1')).teams.groups.length)) === 0, 'reset goes back to the default teams (none in the test data)');
     await ctxA.close(); }
 
   console.log('Layout');
