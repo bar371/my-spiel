@@ -3,7 +3,7 @@
 A small planner for our crew (Sjoerd, Annemieke, Bar, Naomi, Elena and Ties) at **SPIEL Essen 2026**
 (Messe Essen, Thu 22 – Sun 25 October 2026).
 
-- **My day**: a time grid of your day: demo sessions you've joined (fixed times 🔒) and booth visits you've planned. Drag a visit by its ⠿ grip to move it, or by its bottom edge to change its length (15-minute steps, mouse or touch). Clashes are outlined in red, and **Fix clashes** moves overlapping visits to the next free time. Tap a crew member's meeple above the grid to see their day (read-only); 🙋 marks the plans where you'll be there too.
+- **My day**: a time grid of your day: demo sessions you've joined (fixed times 🔒) and booth visits you've planned. Drag a visit by its ⠿ grip to move it, or by its bottom edge to change its length (15-minute steps, mouse or touch). Clashes are outlined in red, and **Fix clashes** moves overlapping visits to the next free time. Joining a demo session only plans it: each one carries a **⏳ No seat yet** tag. Tap it once you've actually booked a seat and it turns into **🎟 Seat booked** (on your day or in the game sheet); the game sheet and the Crew tab show who has a seat. Tap a crew member's meeple above the grid to see their day (read-only); 🙋 marks the plans where you'll be there too.
 - **Games**: every game we're tracking with publisher, hall/booth, players, play time, price, description, a link, and its session times. Tap a game to join a demo session, **plan a booth visit** (any game, no demo needed: pick a day, start and length; it suggests your next free slot), add it to your buy list, or write notes.
 - **Favorites**: tap ☆ on any game to mark one you like, even if you won't plan it. **★ Favorites** filters the list, and the **Hall** menu narrows it (or any other view) to one hall, with a count per hall. The Crew tab shows the crew's favorites, most-liked first.
 - **Crew**: *Who's going where*: day by day, every demo session and booth visit anyone has planned, with everyone's meeples and a 🤝 badge when you're going together. Updates live once crew sync is on.
@@ -126,7 +126,7 @@ The tests use their own sample data in `tests/fixtures/sample-seed.js`.
 
 ## Testing
 
-`tests/e2e.js` drives the app in headless Chromium through 136 checks: player pick, search and filters,
+`tests/e2e.js` drives the app in headless Chromium through 142 checks: player pick, search and filters,
 join, leave and clashes, add, edit and delete, notes, budget maths, share-link import, backup and restore,
 offline mode, and layout from 320px to desktop.
 
