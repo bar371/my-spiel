@@ -411,10 +411,46 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await r.click('[data-member="bar"]');
   ok((await r.locator('#who').innerText()).includes('Bar'), 'works offline');
 
+  console.log('Achievements');
+  { const ctxA = await b.newContext({ viewport: { width: 390, height: 844 } }); await useFixture(ctxA);
+    const a = await ctxA.newPage(); a.on('pageerror', e => errs.push(e.message));
+    const at = async iso => { await a.clock.setFixedTime(new Date(iso)); };
+    const set = fn => a.evaluate(fn);
+    await at('2026-10-20T12:00:00'); await a.goto(URL); await a.click('[data-member="bar"]');
+    await a.click('.tabbar [data-tab="trophies"]');
+    const total = await a.locator('.ach').count();
+    ok(total >= 40 && await a.locator('.ach.unlocked').count() === 0 && await a.locator('.ach.locked').count() === total, `${total} achievements, all locked and secret at first`);
+    ok(!(await a.locator('.ach-grid').innerText()).includes('First Loot'), 'locked achievements keep their names hidden');
+    await set(() => { const d = JSON.parse(localStorage.getItem('spiel26:v1')); d.plans.bar.budget = 100;
+      d.plans.bar.buy = { 'sky-team': { price: 30, prio: 'must', bought: true }, 'ark-nova': { price: 60, prio: 'must', bought: true } };
+      localStorage.setItem('spiel26:v1', JSON.stringify(d)); });
+    await a.reload(); await a.click('.tabbar [data-tab="trophies"]');
+    await a.waitForSelector('#achpop.show', { timeout: 3000 });
+    ok(/achievements? unlocked/i.test(await a.locator('#achpop').innerText()), 'a pop-up announces new achievements');
+    const names = await a.locator('.ach.unlocked b').allInnerTexts();
+    ok(['First Loot', 'Taste Maker', 'Hype Train', 'Wallet Warm-up', 'Co-op Captain', 'Heavy Lifter', 'Hall Pass'].every(n => names.includes(n)), 'buying unlocks the right ones: ' + names.join(', '));
+    ok(!names.includes('Budget Boss') && !names.includes('Thrifty') && !names.includes('SPIEL Veteran'), 'after-the-fair ones wait for the fair to end');
+    ok(await a.locator('.ach.locked').count() === total - names.length, 'the rest stay locked');
+    await a.waitForTimeout(4200);
+    await set(() => { const d = JSON.parse(localStorage.getItem('spiel26:v1')); d.plans.bar.buy.heat = { price: 25, prio: 'maybe', bought: true }; localStorage.setItem('spiel26:v1', JSON.stringify(d)); });
+    await a.reload(); await a.waitForSelector('#achpop.show', { timeout: 3000 });
+    ok((await a.locator('#achpop').innerText()).includes('Bag Carrier'), 'a single new one pops up by name');
+    await a.click('#achpop'); ok(await a.locator('.ach-grid').count() === 1, 'tapping the pop-up opens Trophies');
+    await a.reload(); await a.waitForTimeout(600); ok(!(await a.locator('#achpop').isVisible()), 'no repeat pop-up for ones already announced');
+    await at('2026-10-25T12:00:00'); await a.reload(); await a.click('.tabbar [data-tab="trophies"]');
+    const after = await a.locator('.ach.unlocked b').allInnerTexts();
+    ok(!after.includes('Budget Boss') && after.includes('Oops'), 'after the fair: €115 spent on a €100 budget is an Oops');
+    await set(() => { const d = JSON.parse(localStorage.getItem('spiel26:v1')); delete d.plans.bar.buy.heat; localStorage.setItem('spiel26:v1', JSON.stringify(d)); });
+    await a.reload(); await a.click('.tabbar [data-tab="trophies"]');
+    const after2 = await a.locator('.ach.unlocked b').allInnerTexts();
+    ok(after2.includes('Budget Boss') && after2.includes('Thrifty') && after2.includes('Under the Wire') === false, 'after the fair: €90 on a €100 budget is a Budget Boss and Thrifty');
+    await a.click('.tabbar [data-tab="crew"]'); ok((await a.locator('.view').innerText()).includes('🏆'), 'crew cards show trophy counts');
+    await ctxA.close(); }
+
   console.log('Layout');
   for (const w of [320, 390, 768, 1280]) {
     await p.setViewportSize({ width: w, height: 800 });
-    for (const t of ['schedule','games','crew','budget','settings']) {
+    for (const t of ['schedule','games','crew','budget','trophies','settings']) {
       await tab(t);
       const o = await p.evaluate(() => document.documentElement.scrollWidth > innerWidth);
       if (o) ok(false, `horizontal overflow at ${w}px on ${t}`);

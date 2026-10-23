@@ -34,3 +34,10 @@ self.addEventListener("fetch", e => {
       .catch(() => caches.match(e.request, { ignoreSearch: true }).then(r => r || caches.match("index.html")))
   );
 });
+
+// Tapping a trophy notification opens (or focuses) the app
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true })
+    .then(list => list.length ? list[0].focus() : self.clients.openWindow("./")));
+});
