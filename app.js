@@ -39,6 +39,7 @@
     db.customGames = Array.isArray(db.customGames) ? db.customGames : [];
     db.hiddenGames = Array.isArray(db.hiddenGames) ? db.hiddenGames : [];
     db.pots = Array.isArray(db.pots) ? db.pots : [];
+    db.achSeen = db.achSeen && typeof db.achSeen === "object" ? db.achSeen : {};
     db.plans = db.plans || {};
     let migrated = false;
     Object.entries(RENAMED).forEach(([from, to]) => {
@@ -457,7 +458,7 @@
       const when = p.updatedAt ? new Date(p.updatedAt).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "no plan yet";
       return `<div class="card crew-member">${meeple(m.color)}
         <div><h4>${esc(m.name)}${m.id === db.currentMember ? " <span class='pill gold'>you</span>" : ""}</h4>
-        <p>${n} plan${n === 1 ? "" : "s"} · ★ ${(p.favs || []).filter(id => gameById(id)).length} · ${eur.format(spend)} on the buy list · ${esc(when)}</p></div>
+        <p>${n} plan${n === 1 ? "" : "s"} · ★ ${(p.favs || []).filter(id => gameById(id)).length} · 🏆 ${unlockedFor(m.id).length} · ${eur.format(spend)} on the buy list · ${esc(when)}</p></div>
         ${m.id === db.currentMember && !crewBase() ? `<button class="btn small" data-action="share">Share</button>` : ""}</div>`;
     }).join("");
 
@@ -1074,15 +1075,172 @@
   window.addEventListener("online", () => { if (crewBase() && (!sync.es || sync.es.readyState === 2)) connectSync(); else pushChanges(); });
   window.addEventListener("offline", () => { if (crewBase()) setSyncState("offline"); });
 
+  // ---------- Achievements ----------
+  // Worked out from each member's (synced) plan, so the crew can see each other's trophies.
+  // Which ones this device already announced is kept locally in db.achSeen{memberId: [ids]}.
+  const fairStart = () => new Date(`${DAYS[0].date}T${DAYS[0].open}:00`);
+  const fairEnd = () => { const d = DAYS[DAYS.length - 1]; return new Date(`${d.date}T${d.close}:00`); };
+  function achFacts(mid) {
+    const plan = db.plans[mid], now = new Date();
+    const buys = Object.entries(plan.buy).map(([id, b]) => ({ id, b, g: gameById(id) })).filter(x => x.g);
+    const bought = buys.filter(x => x.b.bought);
+    const price = x => +x.b.price || 0;
+    const items = planItems(mid);
+    const past = items.filter(x => new Date(`${x.day}T${x.end}:00`) <= now);
+    const realHall = h => h && /^(\d+|Galeria)$/.test(h);
+    const halls = new Set([...past.map(x => x.g.hall), ...bought.map(x => x.g.hall)].filter(realHall));
+    const has = tag => bought.filter(x => tagsOf(x.g).includes(tag)).length;
+    const crewGames = new Set(MEMBERS.filter(m => m.id !== mid).flatMap(m => Object.entries(db.plans[m.id].buy).filter(([, b]) => b.bought).map(([id]) => id)));
+    const perDay = DAYS.map(d => items.filter(x => x.day === d.date));
+    const musts = buys.filter(x => x.b.prio === "must");
+    return {
+      plan, bought, buys, items, past, halls, has, perDay, musts,
+      spent: bought.reduce((t, x) => t + price(x), 0),
+      priciest: Math.max(0, ...bought.map(price)),
+      cheapest: bought.length ? Math.min(...bought.map(price).filter(p => p > 0).concat(Infinity)) : Infinity,
+      genres: new Set(bought.flatMap(x => tagsOf(x.g)).filter(t => !/players|Quick|Long|Beginner|Connoisseur|Expert|Expansion|Solo/.test(t))).size,
+      allHalls: new Set(games().map(g => g.hall).filter(h => /^\d+$/.test(h || ""))).size,
+      started: now >= fairStart(), over: now > fairEnd(),
+      seats: (plan.seats || []).filter(s => plan.sessions.includes(s)).length,
+      together: items.some(x => MEMBERS.some(m => m.id !== mid && planItems(m.id, x.day).some(y => y.id === x.id || (y.g.id === x.g.id && overlaps(x, y))))),
+      squad: DAYS.some(d => crewItems(d.date).some(x => x.who.length >= 3 && x.who.some(m => m.id === mid))),
+      twins: bought.some(x => crewGames.has(x.id)),
+      fromPot: buys.some(x => potFor(x.b, mid)),
+      favs: (plan.favs || []).filter(id => gameById(id)).length,
+      budget: plan.unlimited ? 0 : +plan.budget || 0
+    };
+  }
+  // Every achievement: [id, icon, name, what it's for, test]. Locked ones stay secret.
+  const ACHIEVEMENTS = [
+    // Buying different games
+    ["buy-1", "🛍️", "First Loot", "Bought your first game", f => f.bought.length >= 1],
+    ["buy-3", "🎒", "Bag Carrier", "Bought 3 different games", f => f.bought.length >= 3],
+    ["buy-5", "📦", "Shelf Filler", "Bought 5 different games", f => f.bought.length >= 5],
+    ["buy-10", "🗄️", "Pile of Shame", "Bought 10 different games. Will you ever play them all?", f => f.bought.length >= 10],
+    ["buy-15", "🧱", "Shelf Collapse", "Bought 15 different games. Check the floor joists", f => f.bought.length >= 15],
+    ["buy-25", "🐉", "Board Game Dragon", "Bought 25 games and sleeps on the hoard", f => f.bought.length >= 25],
+    ["cheap", "🏷️", "Bargain Hunter", "Bought a game for €10 or less", f => f.cheapest <= 10],
+    ["big-box", "🗿", "Big Box Energy", "Bought a single game of €100 or more", f => f.priciest >= 100],
+    ["rated", "🧐", "Taste Maker", "Bought a game BGG users rate 8.0 or higher", f => f.bought.some(x => (x.g.rating || 0) >= 8)],
+    ["gem", "💎", "Hidden Gem", "Bought a game BGG hasn't rated yet", f => f.bought.some(x => !x.g.rating)],
+    ["hype", "🚂", "Hype Train", "Bought a game from the BGG preview", f => f.bought.some(x => x.g.preview)],
+    ["expansion", "🧩", "Expansionist", "Bought an expansion. More of a good thing", f => f.has("Expansion") >= 1],
+    ["solo", "🧘", "Solo Artist", "Bought a game you can play alone", f => f.has("Solo") >= 1],
+    ["party", "🎉", "Party Animal", "Bought a party game", f => f.has("Party") >= 1],
+    ["heavy", "🏋️", "Heavy Lifter", "Bought a 2h+ brain burner", f => f.has("Long (2h+)") >= 1],
+    ["quick", "⚡", "Quick Fix", "Bought 3 games that play in half an hour", f => f.has("Quick (≤30 min)") >= 3],
+    ["coop", "🤝", "Co-op Captain", "Bought a co-op game. Together we lose!", f => f.has("Co-op") >= 1],
+    ["engine", "⚙️", "Engine Builder", "Bought an engine builder", f => f.has("Engine building") >= 1],
+    ["cards", "🃏", "Cardsharp", "Bought 3 card games", f => f.has("Card game") >= 3],
+    ["dice", "🎲", "Dice Goblin", "Bought 2 dice games", f => f.has("Dice") >= 2],
+    ["genres", "🌈", "Genre Hopper", "Your loot covers 8 different game types", f => f.genres >= 8],
+    ["twins", "👯", "Twinsies", "Bought a game someone else in the crew bought too", f => f.twins],
+    ["must-all", "✅", "Mission Accomplished", "Bought every must-have on your list (3 or more)", f => f.musts.length >= 3 && f.musts.every(x => x.b.bought)],
+    // Spending
+    ["spend-50", "💶", "Wallet Warm-up", "Spent €50", f => f.spent >= 50],
+    ["spend-150", "💸", "Big Spender", "Spent €150", f => f.spent >= 150],
+    ["spend-300", "🎰", "High Roller", "Spent €300", f => f.spent >= 300],
+    ["spend-500", "🐋", "Whale Watching", "Spent €500. The publishers thank you", f => f.spent >= 500],
+    ["spend-1000", "🏦", "Second Mortgage", "Spent €1,000 at one fair. Legendary", f => f.spent >= 1000],
+    ["no-limit", "♾️", "Sky's the Limit", "Took the limit off your budget", f => f.plan.unlimited],
+    ["pot", "🫶", "Sharing is Caring", "Paid for something from a shared budget", f => f.fromPot],
+    // Visiting halls
+    ["hall-1", "🎫", "Hall Pass", "Visited your first hall", f => f.halls.size >= 1],
+    ["hall-3", "🦘", "Hall Hopper", "Visited 3 different halls", f => f.halls.size >= 3],
+    ["hall-5", "🥾", "Hall Crawler", "Visited 5 different halls", f => f.halls.size >= 5],
+    ["hall-all", "🗺️", "Grand Tour", "Visited every hall of the fair", f => f.allHalls >= 3 && [...f.halls].filter(h => /^\d+$/.test(h)).length >= f.allHalls],
+    ["galeria", "🖼️", "Gallery Goer", "Visited the Galeria", f => f.halls.has("Galeria")],
+    // Planning & playing
+    ["plan-1", "📝", "Planner", "Put the first thing on your schedule", f => f.items.length >= 1],
+    ["day-5", "📆", "Booked Solid", "5 things planned on a single day", f => f.perDay.some(d => d.length >= 5)],
+    ["all-days", "🏃", "Marathon Gamer", "Plans on every day of the fair", f => f.perDay.every(d => d.length)],
+    ["early", "🌅", "Doors Open", "Planned something right at opening time", f => f.items.some(x => DAYS.some(d => d.date === x.day && x.start <= d.open))],
+    ["late", "🌙", "Closing Time", "Planned something until the doors close", f => f.items.some(x => DAYS.some(d => d.date === x.day && x.end >= d.close))],
+    ["seat-1", "🎟️", "Seat Snatcher", "Booked a seat at a demo", f => f.seats >= 1],
+    ["seat-5", "🪑", "Front Row Regular", "Booked 5 demo seats", f => f.seats >= 5],
+    ["together", "🫂", "Better Together", "Planned something with someone from the crew", f => f.together],
+    ["squad", "🦸", "Squad Goals", "Three or more of the crew at the same table", f => f.squad],
+    ["fav-10", "⭐", "Fan Club", "Starred 10 games", f => f.favs >= 10],
+    ["fav-25", "🌟", "Superfan", "Starred 25 games", f => f.favs >= 25],
+    ["day-one", "🚪", "Day One", "Played or visited something at the fair", f => f.started && f.past.length >= 1],
+    // After the fair: spending little
+    ["iron-wallet", "🔒", "Iron Wallet", "Left SPIEL without buying a single game. Respect", f => f.over && f.bought.length === 0],
+    ["frugal", "🪙", "Frugal Gamer", "Left the fair having spent €50 or less", f => f.over && f.bought.length >= 1 && f.spent <= 50],
+    ["thrifty", "🐿️", "Thrifty", "Left the fair having spent €100 or less", f => f.over && f.bought.length >= 1 && f.spent <= 100],
+    ["budget-boss", "👑", "Budget Boss", "Ended the fair within your budget", f => f.over && f.budget > 0 && f.spent <= f.budget],
+    ["wire", "🎯", "Under the Wire", "Ended within 5% of your budget, without going over", f => f.over && f.budget > 0 && f.spent <= f.budget && f.spent >= f.budget * .95],
+    ["oops", "🙈", "Oops", "Ended the fair over budget. It happens", f => f.over && f.budget > 0 && f.spent > f.budget],
+    ["veteran", "🎖️", "SPIEL Veteran", "Made it through SPIEL '26", f => f.over && f.past.length >= 1]
+  ].map(([id, icon, name, desc, test]) => ({ id, icon, name, desc, test }));
+  const unlockedFor = mid => { const f = achFacts(mid); return ACHIEVEMENTS.filter(a => { try { return !!a.test(f); } catch (_) { return false; } }); };
+
+  // Announce newly unlocked achievements: a pop-up in the app, and a phone notification
+  // when the app is in the background and notifications are allowed
+  const achQueue = [];
+  function checkAchievements() {
+    const mid = db.currentMember;
+    if (!mid) return;
+    const now = unlockedFor(mid).map(a => a.id);
+    const seen = Array.isArray(db.achSeen[mid]) ? db.achSeen[mid] : null;
+    const fresh = seen ? now.filter(id => !seen.includes(id)) : now;
+    if (!fresh.length) return;
+    db.achSeen[mid] = [...new Set([...(seen || []), ...now])];
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (_) {}
+    const list = fresh.map(id => ACHIEVEMENTS.find(a => a.id === id));
+    if (list.length > 3) achQueue.push({ icon: "🏆", name: `${list.length} achievements unlocked!`, desc: "Open Trophies to see them all" });
+    else achQueue.push(...list);
+    if (document.hidden) systemNotify(list);
+    showNextAch();
+  }
+  let achBusy = false, achTimer = null;
+  function hideAch() {
+    clearTimeout(achTimer); const el = $("#achpop");
+    el.classList.remove("show"); achTimer = setTimeout(() => { el.hidden = true; achBusy = false; showNextAch(); }, 350);
+  }
+  function showNextAch() {
+    if (achBusy || !achQueue.length) return;
+    const a = achQueue.shift(), el = $("#achpop");
+    if (!el) return;
+    achBusy = true;
+    el.innerHTML = `<span class="ach-icon">${a.icon}</span><span><small>Achievement unlocked</small><b>${esc(a.name)}</b><span>${esc(a.desc)}</span></span>`;
+    el.hidden = false; requestAnimationFrame(() => el.classList.add("show"));
+    achTimer = setTimeout(hideAch, 3600);
+  }
+  function systemNotify(list) {
+    if (!("Notification" in window) || Notification.permission !== "granted") return;
+    const title = list.length === 1 ? `🏆 ${list[0].name}` : `🏆 ${list.length} achievements unlocked`;
+    const opts = { body: list.length === 1 ? list[0].desc : list.map(a => a.name).join(", "), icon: "icons/icon-192.png", tag: "spiel26-ach" };
+    (navigator.serviceWorker && navigator.serviceWorker.getRegistration ? navigator.serviceWorker.getRegistration() : Promise.resolve(null))
+      .then(reg => reg ? reg.showNotification(title, opts) : new Notification(title, opts)).catch(() => {});
+  }
+
+  function viewTrophies() {
+    const mine = unlockedFor(db.currentMember), total = ACHIEVEMENTS.length;
+    const canNotify = "Notification" in window && Notification.permission === "default";
+    const crew = MEMBERS.filter(m => m.id !== db.currentMember).map(m => ({ m, n: unlockedFor(m.id).length })).sort((a, b) => b.n - a.n);
+    return `<h2 class="section-title">🏆 ${esc(me().name)}'s trophies</h2>
+      <div class="card ach-head"><div class="coins">${mine.length}<small> / ${total}</small></div>
+        <div class="bar"><span class="bought" style="width:${mine.length / total * 100}%"></span></div>
+        <p class="muted small">${total - mine.length ? `${total - mine.length} still locked and secret. Buy games, roam the halls and plan with the crew to find them. Some only show up after the fair…` : "You found them all. Absolute legend."}</p>
+        ${canNotify ? `<button class="btn small" data-action="ach-notify">🔔 Also notify me on my phone</button>` : ""}</div>
+      <div class="ach-grid">
+        ${mine.map(a => `<div class="ach unlocked"><span class="ach-icon">${a.icon}</span><b>${esc(a.name)}</b><small>${esc(a.desc)}</small></div>`).join("")}
+        ${Array.from({ length: total - mine.length }, () => `<div class="ach locked" aria-label="Locked achievement"><span class="ach-icon">🔒</span><b>???</b></div>`).join("")}
+      </div>
+      <h2 class="section-title">👥 Crew trophies</h2>
+      <div class="card">${crew.map(({ m, n }) => `<div class="ach-crew">${meeple(m.color, 'style="width:22px;height:22px"')}<span>${esc(m.name)}</span><b>🏆 ${n}</b></div>`).join("")}</div>`;
+  }
+
   // ---------- Render ----------
   function render() {
     renderHeader();
     document.querySelectorAll(".tabbar button").forEach(b => b.classList.toggle("active", b.dataset.tab === ui.tab));
     if (!me()) { $("#view").innerHTML = ""; $("#days").hidden = true; return; }
     renderDays();
-    const views = { schedule: viewSchedule, games: viewGames, crew: viewCrew, budget: viewBudget, settings: viewSettings };
+    const views = { schedule: viewSchedule, games: viewGames, crew: viewCrew, budget: viewBudget, trophies: viewTrophies, settings: viewSettings };
     $("#view").innerHTML = (views[ui.tab] || viewSchedule)();
     keepUi();
+    checkAchievements();
   }
   const refreshSheet = () => { if (ui.sheetGame) gameSheet(ui.sheetGame); };
 
@@ -1106,6 +1264,9 @@
         toast(`Hi ${me().name}!`);
         break;
       case "who": pickPlayerSheet(false); break;
+      case "ach-notify":
+        Notification.requestPermission().then(p => { toast(p === "granted" ? "🔔 You'll get a notification for new trophies" : "OK, pop-ups in the app only"); render(); }).catch(() => {});
+        break;
       case "view-who": ui.who = el.dataset.who === db.currentMember ? "" : el.dataset.who; render(); window.scrollTo(0, 0); break;
       case "open": gameSheet(gid); break;
       case "filter": ui.filter = el.dataset.filter; ui.limit = PAGE; render(); break;
@@ -1406,6 +1567,10 @@
     const wait = setInterval(() => { if (me()) { clearInterval(wait); checkIncomingPlan(); } }, 400);
   }
   setInterval(renderHeader, 60 * 1000);
+  // Time-based trophies (halls visited, the fair being over) unlock as the clock moves on
+  setInterval(() => { if (!me()) return; if (ui.tab === "trophies" && !ui.sheetGame) render(); else checkAchievements(); }, 60 * 1000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden && me()) checkAchievements(); });
+  $("#achpop").addEventListener("click", () => { hideAch(); ui.tab = "trophies"; render(); window.scrollTo(0, 0); });
 
   if ("serviceWorker" in navigator && (location.protocol === "https:" || location.hostname === "localhost")) {
     navigator.serviceWorker.register("sw.js").catch(() => {});

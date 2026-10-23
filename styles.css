@@ -272,7 +272,7 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 /* ---------- Tab bar ---------- */
 .tabbar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 30;
-  display: grid; grid-template-columns: repeat(5, 1fr);
+  display: grid; grid-template-columns: repeat(6, 1fr);
   padding: 6px 6px calc(6px + var(--safe-b));
   background: rgba(30,18,9,.94); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
   border-top: 3px solid var(--accent);
@@ -430,3 +430,35 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
 }
 button.seat-tag { cursor: pointer; }
 .seat-tag.on { background: #d6efd9; color: #22683a; }
+
+/* ---------- Achievements ---------- */
+.achpop {
+  position: fixed; left: 50%; top: calc(12px + env(safe-area-inset-top, 0px)); z-index: 70; width: min(92vw, 380px);
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px; cursor: pointer;
+  background: linear-gradient(135deg, #3b2412, #1e1209); color: var(--paper); border: 2px solid var(--accent);
+  border-radius: 16px; box-shadow: 0 12px 30px rgba(0,0,0,.5);
+  transform: translate(-50%, -140%) scale(.9); opacity: 0; transition: transform .35s cubic-bezier(.2,1.4,.4,1), opacity .25s;
+}
+.achpop.show { transform: translate(-50%, 0) scale(1); opacity: 1; }
+.achpop[hidden] { display: none; }
+.achpop .ach-icon { font-size: 2.2rem; animation: ach-wiggle 1s ease .2s; }
+.achpop small { display: block; color: var(--accent); font-weight: 800; text-transform: uppercase; letter-spacing: .06em; font-size: .66rem; }
+.achpop b { display: block; font-family: var(--font-head); font-size: 1.1rem; }
+.achpop span span { font-size: .8rem; opacity: .85; }
+@keyframes ach-wiggle { 0%, 100% { transform: rotate(0) scale(1); } 25% { transform: rotate(-14deg) scale(1.25); } 50% { transform: rotate(10deg) scale(1.2); } 75% { transform: rotate(-6deg) scale(1.1); } }
+.ach-head { text-align: center; }
+.ach-head .coins small { font-size: 1.1rem; opacity: .6; }
+.ach-head .btn { margin-top: 10px; }
+.ach-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; margin: 12px 0; }
+.ach {
+  display: grid; justify-items: center; align-content: start; gap: 3px; text-align: center; padding: 12px 6px 10px;
+  border-radius: 14px; background: var(--paper); box-shadow: var(--shadow);
+}
+.ach .ach-icon { font-size: 1.9rem; line-height: 1.1; }
+.ach b { font-family: var(--font-head); font-size: .86rem; line-height: 1.15; }
+.ach small { font-size: .7rem; color: var(--ink-soft); font-weight: 700; line-height: 1.25; }
+.ach.unlocked { border: 2px solid var(--accent); background: linear-gradient(180deg, #fff8e1, var(--paper)); }
+.ach.locked { background: rgba(255,255,255,.1); box-shadow: none; color: var(--paper); opacity: .55; }
+.ach.locked .ach-icon { filter: grayscale(1); font-size: 1.4rem; }
+.ach-crew { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-weight: 800; }
+.ach-crew span { flex: 1; }
