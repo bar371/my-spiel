@@ -314,6 +314,25 @@ const ok = (c, m) => { if (c) { pass++; console.log('  ✓', m); } else { fail++
   await tab('crew'); await p.click('[data-day="2026-10-22"]');
   ok((await text('.view')).includes('booth visit'), 'crew view shows booth visits');
 
+  console.log("A crew member's schedule");
+  { const hv = (await visits()).find(x => x.game === 'heat');
+    await p.evaluate(hv => { const d = JSON.parse(localStorage.getItem('spiel26:v1'));
+      d.plans.naomi.visits = [{ id: 'v-n1', game: 'heat', day: hv.day, start: hv.start, end: hv.end }, { id: 'v-n2', game: 'sky-team', day: hv.day, start: '11:00', end: '11:30' }];
+      d.plans.naomi.updatedAt = Date.now(); localStorage.setItem('spiel26:v1', JSON.stringify(d)); }, hv);
+    await p.reload(); await tab('schedule'); await p.click(`[data-day="${hv.day}"]`);
+    const mineBefore = await p.locator('.pblock').count();
+    ok(await p.locator('.who-chip').count() === 4 && (await text('.who-chip.active')).includes('Me'), 'whose-schedule row, mine selected');
+    await p.click('.who-chip[data-who="naomi"]');
+    ok((await text('.view')).includes("Naomi's") && await p.locator('.pblock').count() === 2, "Naomi's day shows her plans");
+    ok(await p.locator('.pblock .grip, .pblock .resize').count() === 0 && await p.locator('[data-action="fix-clashes"]').count() === 0, "Naomi's plans are read-only");
+    ok(await p.locator('.pblock.with-me').count() === 1, "her Heat visit is marked as one I'm at too");
+    ok((await text(`[data-day="${hv.day}"] .count`)) === '2', "day badges count Naomi's plans");
+    await p.click('.pblock .block-body >> nth=0'); ok(await p.isVisible('#sheet'), "tapping Naomi's plan opens the game"); await close();
+    await p.click('.who-chip[data-who="bar"]');
+    ok((await text('.view')).includes('Bar has nothing planned'), 'empty day for a crew member');
+    await p.click('.who-chip[data-who="sjord"]');
+    ok(await p.locator('.pblock').count() === mineBefore && await p.locator('.pblock .grip').count() > 0, 'back to my own, editable day'); }
+
   console.log('Share link round-trip (other device)');
   let shared = null;
   await p.evaluate(() => { navigator.share = undefined; });

@@ -356,6 +356,18 @@ code { background: var(--paper-2); padding: 1px 6px; border-radius: 6px; font-si
   content: ""; position: absolute; left: 50%; bottom: 3px; width: 28px; height: 4px; margin-left: -14px;
   border-radius: 2px; background: rgba(0,0,0,.2);
 }
+/* Whose schedule: me or a crew member */
+.who-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 4px; }
+.who-chip {
+  flex: none; display: flex; align-items: center; gap: 4px; padding: 4px 10px 4px 6px; border-radius: 999px;
+  border: 2px solid transparent; background: rgba(255,255,255,.12); color: var(--paper);
+  font: inherit; font-weight: 800; font-size: .82rem; cursor: pointer;
+}
+.who-chip svg { width: 20px; height: 20px; }
+.who-chip.active { background: var(--paper); color: var(--ink); border-color: var(--accent); }
+.pblock.readonly .block-body { padding-left: 8px; }
+.pblock.readonly .lock { width: 20px; font-size: .85rem; opacity: 1; }
+.pblock.with-me { box-shadow: 0 0 0 2px var(--accent), var(--shadow); }
 .hint { color: var(--paper); opacity: .8; font-size: .8rem; margin: 10px 4px 12px; text-align: center; }
 
 /* Booth visits in the game sheet */
