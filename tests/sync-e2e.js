@@ -90,6 +90,12 @@ const norm = s => s.replace(/ /g, " ");
   await B.selectOption("#buy-pot", { label: "Bar & Naomi" }); await B.click(".sheet-x");
   ok(await until(async () => { await tab(A, "budget"); const t = norm(await A.locator("#view").innerText()); return t.includes("Sky Team") && t.includes("Naomi"); }), "Bar sees Naomi's item in the shared budget");
 
+  console.log("Teams");
+  await tab(A, "trophies"); await A.click('[data-action="teams-edit"]');
+  await A.selectOption('#teams-form select[name="bar"]', "new"); await A.selectOption('#teams-form select[name="naomi"]', "new"); await A.click("#teams-form [type=submit]");
+  ok(await until(async () => { await tab(B, "trophies"); return norm(await B.locator("#view").innerText()).includes("Team Bar & Naomi"); }), "Naomi sees the team Bar made");
+  await tab(B, "games");
+
   console.log("Booth visits");
   await tab(B, "games"); await B.click('[data-game="sky-team"]');
   await B.selectOption("#visit-day", "2026-10-24"); await B.fill("#visit-start", "13:00"); await B.selectOption("#visit-len", "30");

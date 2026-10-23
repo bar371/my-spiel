@@ -29,6 +29,9 @@ window.SPIEL_SEED = {
     { id: "ties",     name: "Ties",     color: "#e0782f" }
   ],
 
+  // Default teams: team members share their trophies (can be changed in the app under Trophies)
+  teams: [["sjord", "annemieke"], ["bar", "naomi"], ["ties", "elena"]],
+
   tags: ["Engine building", "Deck building", "Worker placement", "Drafting", "Tile laying", "Set collection", "Area control", "PvP / conflict", "Co-op", "Trick-taking", "Bluffing & deduction", "Push your luck", "Roll & write", "Dice", "Negotiation & auctions", "Real-time", "Puzzle", "Abstract", "Party", "Family", "Economic", "Adventure & campaign", "Racing", "Dexterity", "Card game", "Solo", "2 players", "6+ players", "Quick (≤30 min)", "Long (2h+)", "Expansion", "Beginner", "Connoisseur", "Expert"],
 
   // SPIEL's official exhibitor list, for search

@@ -10,6 +10,7 @@
  *                              visits are booth visits planned without a demo session:
  *                              { id, game, day, start, end }
  *     pots[]                   shared budgets: { id, name, members[], budget, unlimited?, updatedAt, deleted? };
+ *     teams                    { groups: [[memberId, ...], ...], updatedAt } or null for SEED.teams; teammates share trophies
  *                              a buy-list item with { pot: id } is paid from that pot
  *     crewCode                 shared crew id for live sync (see data/sync-config.js)
  *
@@ -40,6 +41,7 @@
     db.hiddenGames = Array.isArray(db.hiddenGames) ? db.hiddenGames : [];
     db.pots = Array.isArray(db.pots) ? db.pots : [];
     db.achSeen = db.achSeen && typeof db.achSeen === "object" ? db.achSeen : {};
+    db.teams = db.teams && typeof db.teams === "object" ? db.teams : null;
     db.plans = db.plans || {};
     let migrated = false;
     Object.entries(RENAMED).forEach(([from, to]) => {
@@ -868,6 +870,7 @@
   const cleanPot = p => isObj(p) && typeof p.id === "string" && KEY_RE.test(p.id) ? {
     id: p.id, name: typeof p.name === "string" ? p.name : "", members: asList(p.members).filter(m => typeof m === "string"),
     budget: Math.max(0, Number(p.budget) || 0), ...(p.unlimited ? { unlimited: true } : {}), updatedAt: +p.updatedAt || 0, ...(p.deleted ? { deleted: true } : {}) } : null;
+  const cleanTeams = t => ({ groups: asList(t.groups).map(g => asList(g).filter(id => typeof id === "string" && member(id))).filter(g => g.length), updatedAt: +t.updatedAt || 0 });
   // Newest version of each shared budget wins; true when something changed
   function mergePots(incoming) {
     let changed = false;
@@ -989,6 +992,7 @@
       if (!cur || (+g.updatedAt || 0) > (+cur.updatedAt || 0)) { db.customGames = db.customGames.filter(x => x.id !== g.id).concat(cleanGame(g)); changed = true; }
     });
     if (mergePots(isObj(r.pots) ? Object.values(r.pots) : [])) changed = true;
+    if (isObj(r.teams) && (+r.teams.updatedAt || 0) > (+(db.teams || {}).updatedAt || 0)) { db.teams = cleanTeams(r.teams); changed = true; }
     const n = db.customGames.length;
     db.customGames = db.customGames.filter(g => !db.hiddenGames.includes(g.id));
     if (db.customGames.length !== n) changed = true;
@@ -1012,6 +1016,7 @@
     db.hiddenGames.forEach(id => { if (KEY_RE.test(id) && !rh[id]) put(`hidden/${id}`, true); });
     const rpots = isObj(r.pots) ? r.pots : {};
     db.pots.forEach(p => { if (KEY_RE.test(p.id) && (+p.updatedAt || 0) > (+(rpots[p.id] || {}).updatedAt || 0)) put(`pots/${p.id}`, p); });
+    if (db.teams && (+db.teams.updatedAt || 0) > (+(isObj(r.teams) ? r.teams : {}).updatedAt || 0)) put("teams", db.teams);
   }
 
   function put(path, value) {
@@ -1172,6 +1177,15 @@
     ["oops", "🙈", "Oops", "Ended the fair over budget. It happens", f => f.over && f.budget > 0 && f.spent > f.budget],
     ["veteran", "🎖️", "SPIEL Veteran", "Made it through SPIEL '26", f => f.over && f.past.length >= 1]
   ].map(([id, icon, name, desc, test]) => ({ id, icon, name, desc, test }));
+  // Teams share trophies: a trophy one teammate earns counts for the whole team
+  const teamGroups = () => (db.teams ? db.teams.groups : asList(SEED.teams)).map(g => g.filter(member)).filter(g => g.length);
+  const teamOf = mid => teamGroups().find(g => g.includes(mid)) || [mid];
+  const teamName = ids => ids.length > 1 ? `Team ${ids.map(id => member(id).name).join(" & ")}` : member(ids[0]).name;
+  // [{ a, who: [members who earned it] }] for a team, in list order
+  function teamUnlocked(ids) {
+    const by = new Map(ids.map(id => [id, new Set(unlockedFor(id).map(a => a.id))]));
+    return ACHIEVEMENTS.map(a => ({ a, who: ids.filter(id => by.get(id).has(a.id)).map(member) })).filter(x => x.who.length);
+  }
   const unlockedFor = mid => { const f = achFacts(mid); return ACHIEVEMENTS.filter(a => { try { return !!a.test(f); } catch (_) { return false; } }); };
 
   // Announce newly unlocked achievements: a pop-up in the app, and a phone notification
@@ -1180,13 +1194,15 @@
   function checkAchievements() {
     const mid = db.currentMember;
     if (!mid) return;
-    const now = unlockedFor(mid).map(a => a.id);
+    const team = teamUnlocked(teamOf(mid));
+    const now = team.map(x => x.a.id);
     const seen = Array.isArray(db.achSeen[mid]) ? db.achSeen[mid] : null;
     const fresh = seen ? now.filter(id => !seen.includes(id)) : now;
     if (!fresh.length) return;
     db.achSeen[mid] = [...new Set([...(seen || []), ...now])];
     try { localStorage.setItem(STORE_KEY, JSON.stringify(db)); } catch (_) {}
-    const list = fresh.map(id => ACHIEVEMENTS.find(a => a.id === id));
+    const list = fresh.map(id => { const x = team.find(t => t.a.id === id);
+      return x.who.some(m => m.id === mid) ? x.a : { ...x.a, desc: `${x.who.map(m => m.name).join(" & ")} earned it for the team · ${x.a.desc}` }; });
     if (list.length > 3) achQueue.push({ icon: "🏆", name: `${list.length} achievements unlocked!`, desc: "Open Trophies to see them all" });
     else achQueue.push(...list);
     if (document.hidden) systemNotify(list);
@@ -1215,21 +1231,50 @@
   }
 
   function viewTrophies() {
-    const mine = unlockedFor(db.currentMember), total = ACHIEVEMENTS.length;
+    const ids = teamOf(db.currentMember), solo = ids.length < 2, total = ACHIEVEMENTS.length;
+    const got = teamUnlocked(ids), mineN = got.filter(x => x.who.some(m => m.id === db.currentMember)).length;
     const canNotify = "Notification" in window && Notification.permission === "default";
-    const crew = MEMBERS.filter(m => m.id !== db.currentMember).map(m => ({ m, n: unlockedFor(m.id).length })).sort((a, b) => b.n - a.n);
-    return `<h2 class="section-title">🏆 ${esc(me().name)}'s trophies</h2>
-      <div class="card ach-head"><div class="coins">${mine.length}<small> / ${total}</small></div>
-        <div class="bar"><span class="bought" style="width:${mine.length / total * 100}%"></span></div>
-        <p class="muted small">${total - mine.length ? `${total - mine.length} still locked and secret. Buy games, roam the halls and plan with the crew to find them. Some only show up after the fair…` : "You found them all. Absolute legend."}</p>
+    const standings = [...teamGroups(), ...MEMBERS.filter(m => !teamGroups().some(g => g.includes(m.id))).map(m => [m.id])]
+      .map(g => ({ g, n: teamUnlocked(g).length })).sort((a, b) => b.n - a.n);
+    return `<h2 class="section-title">🏆 ${solo ? `${esc(me().name)}'s trophies` : `${esc(teamName(ids))}`}</h2>
+      <div class="card ach-head">
+        ${solo ? "" : `<div class="ach-team">${meeples(ids.map(member))}</div>`}
+        <div class="coins">${got.length}<small> / ${total}</small></div>
+        <div class="bar"><span class="bought" style="width:${got.length / total * 100}%"></span></div>
+        ${solo ? "" : `<p class="small"><b>You earned ${mineN}</b> of the team's ${got.length}. Teammates share every trophy.</p>`}
+        <p class="muted small">${total - got.length ? `${total - got.length} still locked and secret. Buy games, roam the halls and plan with the crew to find them. Some only show up after the fair…` : "You found them all. Absolute legend."}</p>
         ${canNotify ? `<button class="btn small" data-action="ach-notify">🔔 Also notify me on my phone</button>` : ""}</div>
+      <h2 class="section-title">🥇 Team standings <button class="btn small secondary" data-action="teams-edit" style="margin-left:auto">Edit teams</button></h2>
+      <div class="card">${standings.map(({ g, n }, i) => `<div class="ach-crew ${g.includes(db.currentMember) ? "mine" : ""}"><span class="rank">${["🥇", "🥈", "🥉"][i] || i + 1}</span>${meeples(g.map(member))}<span class="team-label">${esc(teamName(g))}</span><b>🏆 ${n}</b></div>`).join("")}</div>
       <div class="ach-grid">
-        ${mine.map(a => `<div class="ach unlocked"><span class="ach-icon">${a.icon}</span><b>${esc(a.name)}</b><small>${esc(a.desc)}</small></div>`).join("")}
-        ${Array.from({ length: total - mine.length }, () => `<div class="ach locked" aria-label="Locked achievement"><span class="ach-icon">🔒</span><b>???</b></div>`).join("")}
+        ${got.map(({ a, who }) => `<div class="ach unlocked ${who.some(m => m.id === db.currentMember) ? "" : "by-team"}"><span class="ach-icon">${a.icon}</span><b>${esc(a.name)}</b><small>${esc(a.desc)}</small>
+          ${solo ? "" : `<span class="ach-who">${meeples(who)}</span>`}</div>`).join("")}
+        ${Array.from({ length: total - got.length }, () => `<div class="ach locked" aria-label="Locked achievement"><span class="ach-icon">🔒</span><b>???</b></div>`).join("")}
       </div>
-      <h2 class="section-title">👥 Crew trophies</h2>
-      <div class="card">${crew.map(({ m, n }) => `<div class="ach-crew">${meeple(m.color, 'style="width:22px;height:22px"')}<span>${esc(m.name)}</span><b>🏆 ${n}</b></div>`).join("")}</div>`;
+`;
   }
+  function teamsSheet() {
+    const groups = teamGroups();
+    const label = g => g.map(id => member(id).name).join(" & ");
+    openSheet(`<h2 id="sheet-title">Teams</h2>
+      <p class="muted small">Teammates share their trophies. Pick a team for everyone; this changes it for the whole crew.</p>
+      <form id="teams-form">
+        ${MEMBERS.map(m => { const gi = groups.findIndex(g => g.includes(m.id));
+          return `<label class="field team-pick">${meeple(m.color, 'style="width:22px;height:22px;vertical-align:-5px"')} ${esc(m.name)}
+            <select name="${esc(m.id)}">${groups.map((g, i) => `<option value="${i}" ${gi === i ? "selected" : ""}>Team ${i + 1} (${esc(label(g))})</option>`).join("")}
+              <option value="new">A new team</option><option value="solo" ${gi < 0 ? "selected" : ""}>No team (solo)</option></select></label>`; }).join("")}
+        <p class="muted small">Everyone picking “A new team” ends up together in one new team.</p>
+        <div class="row"><button class="btn" type="submit">Save teams</button>
+          <button class="btn secondary" type="button" data-action="teams-reset">Back to the default teams</button></div>
+      </form>`);
+  }
+  function saveTeams(form) {
+    const f = new FormData(form), groups = teamGroups().map(() => []), fresh = [];
+    MEMBERS.forEach(m => { const v = f.get(m.id); if (v === "new") fresh.push(m.id); else if (v !== "solo" && groups[+v]) groups[+v].push(m.id); });
+    db.teams = { groups: [...groups, fresh].filter(g => g.length > 1), updatedAt: Date.now() };
+    save(); closeSheet(); render(); toast("Teams saved");
+  }
+
 
   // ---------- Render ----------
   function render() {
@@ -1264,6 +1309,11 @@
         toast(`Hi ${me().name}!`);
         break;
       case "who": pickPlayerSheet(false); break;
+      case "teams-edit": teamsSheet(); break;
+      case "teams-reset":
+        db.teams = { groups: asList(SEED.teams).map(g => g.filter(member)).filter(g => g.length > 1), updatedAt: Date.now() };
+        save(); closeSheet(); render(); toast("Default teams are back");
+        break;
       case "ach-notify":
         Notification.requestPermission().then(p => { toast(p === "granted" ? "🔔 You'll get a notification for new trophies" : "OK, pop-ups in the app only"); render(); }).catch(() => {});
         break;
@@ -1542,6 +1592,7 @@
   document.addEventListener("submit", e => {
     if (e.target.id === "game-form") { e.preventDefault(); saveGameForm(e.target); }
     if (e.target.id === "pot-form") { e.preventDefault(); savePot(e.target); }
+    if (e.target.id === "teams-form") { e.preventDefault(); saveTeams(e.target); }
     if (e.target.id === "crew-join") {
       e.preventDefault();
       const code = new FormData(e.target).get("code");

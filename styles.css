@@ -461,4 +461,14 @@ button.seat-tag { cursor: pointer; }
 .ach.locked { background: rgba(255,255,255,.1); box-shadow: none; color: var(--paper); opacity: .55; }
 .ach.locked .ach-icon { filter: grayscale(1); font-size: 1.4rem; }
 .ach-crew { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-weight: 800; }
-.ach-crew span { flex: 1; }
+.ach-crew .team-label { flex: 1; min-width: 0; }
+.ach-crew .meeples, .ach-who .meeples { position: static; }
+.ach-crew .meeples { min-width: 40px; }
+.ach-team { margin-bottom: 2px; }
+.ach-team .meeples svg { width: 30px; height: 30px; }
+.ach-who { margin-top: 3px; }
+.ach-who .meeples svg { width: 16px; height: 16px; }
+.ach.by-team { border-style: dashed; }
+.ach-crew .rank { width: 24px; text-align: center; }
+.ach-crew.mine { background: #fff8e1; margin: 0 -8px; padding: 4px 8px; border-radius: 10px; }
+.team-pick select { margin-top: 4px; }
